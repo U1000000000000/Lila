@@ -15,7 +15,8 @@
     let isPlaying = false;
 
     function connectWebSocket() {
-      socket = new WebSocket("wss://lila-jklo.onrender.com//ws");
+      socket = new WebSocket("wss://lila-jklo.onrender.com/ws");
+
 
       socket.onopen = () => {
         document.getElementById("status").textContent = "🟢 Connected";
