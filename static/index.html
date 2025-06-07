@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Lila</title>
+</head>
+<body>
+  <p id="status">🔴 Not Connected</p>
+  <p id="transcript"></p>
+  <audio id="audio" controls></audio>
+
+  <script>
+    let socket;
+    let audioQueue = [];
+    let isPlaying = false;
+
+    function connectWebSocket() {
+      socket = new WebSocket("ws://127.0.0.1:8000/ws");
+
+      socket.onopen = () => {
+        document.getElementById("status").textContent = "🟢 Connected";
+        startRecording();
+      };
+
+      socket.onmessage = async (message) => {
+        if (message.data instanceof Blob && message.data.size > 0) {
+          const arrayBuffer = await message.data.arrayBuffer();
+          const wavBlob = convertPCMToWav(arrayBuffer, 24000);
+
+          if (wavBlob) {
+            const audioUrl = URL.createObjectURL(wavBlob);
+            audioQueue.push(audioUrl);
+            playNextAudio();
+          }
+        } else {
+          try {
+            const received = JSON.parse(message.data);
+            if (received.response) {
+              document.getElementById("transcript").textContent += received.response + " ";
+            }
+          } catch (error) {
+            console.error("❌ Error parsing message:", error);
+          }
+        }
+      };
+
+      socket.onclose = () => {
+        document.getElementById("status").textContent = "🔴 Reconnecting...";
+        setTimeout(connectWebSocket, 2000);
+      };
+
+      socket.onerror = (error) => console.error("WebSocket Error:", error);
+    }
+
+    function startRecording() {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0 && socket.readyState === 1) {
+            socket.send(event.data);
+          }
+        };
+
+        mediaRecorder.start(5); // 10ms chunks
+      });
+    }
+
+    function playNextAudio() {
+      if (isPlaying || audioQueue.length === 0) return;
+
+      isPlaying = true;
+      const audioElement = document.getElementById("audio");
+      const nextUrl = audioQueue.shift();
+      audioElement.src = nextUrl;
+      audioElement.play().then(() => {
+        audioElement.onended = () => {
+          isPlaying = false;
+          playNextAudio();
+        };
+      }).catch((error) => {
+        console.error("Audio playback error:", error);
+        isPlaying = false;
+        playNextAudio();
+      });
+    }
+
+    function convertPCMToWav(arrayBuffer, sampleRate) {
+      try {
+        const numChannels = 1;
+        const bitsPerSample = 16;
+        const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+        const blockAlign = (numChannels * bitsPerSample) / 8;
+
+        const wavHeader = new ArrayBuffer(44);
+        const view = new DataView(wavHeader);
+
+        writeString(view, 0, "RIFF");
+        view.setUint32(4, 36 + arrayBuffer.byteLength, true);
+        writeString(view, 8, "WAVE");
+        writeString(view, 12, "fmt ");
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); // PCM
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, byteRate, true);
+        view.setUint16(32, blockAlign, true);
+        view.setUint16(34, bitsPerSample, true);
+        writeString(view, 36, "data");
+        view.setUint32(40, arrayBuffer.byteLength, true);
+
+        const wavBytes = new Uint8Array(44 + arrayBuffer.byteLength);
+        wavBytes.set(new Uint8Array(wavHeader), 0);
+        wavBytes.set(new Uint8Array(arrayBuffer), 44);
+
+        return new Blob([wavBytes], { type: "audio/wav" });
+      } catch (error) {
+        console.error("❌ Error converting PCM to WAV:", error);
+        return null;
+      }
+    }
+
+    function writeString(view, offset, string) {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    }
+
+    connectWebSocket();
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
