@@ -15,7 +15,7 @@
     let isPlaying = false;
 
     function connectWebSocket() {
-      socket = new WebSocket("ws://127.0.0.1:8000/ws");
+      socket = new WebSocket("wss://lila-fastapi.onrender.com/ws");
 
       socket.onopen = () => {
         document.getElementById("status").textContent = "🟢 Connected";
