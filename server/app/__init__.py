@@ -1,0 +1,51 @@
+"""
+FastAPI application factory.
+Registers all routers and middleware here.
+"""
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.api.v1 import ws as ws_routes
+from app.api.v1 import auth as auth_routes
+from app.api.v1 import users as user_routes
+from app.api.v1 import memory as memory_routes
+from app.middleware.auth_middleware import AuthMiddleware
+
+app = FastAPI(
+    title="AI Voice Companion",
+    description="Voice-first AI companion backend",
+    version="0.1.0",
+)
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # Vite dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── Routers ───────────────────────────────────────────────────────────────────
+app.include_router(ws_routes.router)                          # /ws  (WebSocket)
+app.include_router(auth_routes.router,   prefix="/api/v1")   # /api/v1/auth
+app.include_router(user_routes.router,   prefix="/api/v1")   # /api/v1/users
+app.include_router(memory_routes.router, prefix="/api/v1")   # /api/v1/memory
+
+# ── Middleware ───────────────────────────────────────────────────────────────
+app.add_middleware(AuthMiddleware)
+
+# ── Lifecycle ─────────────────────────────────────────────────────────────────
+
+from app.db.mongodb import connect_db, close_db
+
+@app.on_event("startup")
+async def startup_event():
+    print("🚀 Server starting up...")
+    await connect_db()
+
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("💾 Server shutting down — saving state...")
+    await close_db()

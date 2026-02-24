@@ -1,0 +1,36 @@
+/**
+ * API Service — centralised REST client (placeholder).
+ * Will use axios or fetch with JWT auth header injection.
+ *
+ * Usage (future):
+ *   import { api } from "./api";
+ *   const user = await api.get("/users/me");
+ */
+
+// Relative URL — Vite proxy forwards /api → localhost:8000 in dev.
+const BASE_URL = import.meta.env.VITE_API_URL || "/api/v1";
+
+/** Read JWT from sessionStorage and return as Authorization header. */
+function authHeaders() {
+  const token = sessionStorage.getItem("jwt_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export const api = {
+  get: async (path) => {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      credentials: "include",
+      headers: { ...authHeaders() },
+    });
+    return res.json();
+  },
+  post: async (path, body) => {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      credentials: "include",
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  },
+};
