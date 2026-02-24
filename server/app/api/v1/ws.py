@@ -11,15 +11,31 @@ import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.config import settings
-from app.services.memory_mongo_service import get_memory_for_user, save_memory_for_user
+from app.services.memory_mongo_service import get_conversation_for_user
 from app.core.security import decode_access_token
 from app.services.stt_service import connect_stt, connect_tts
 from app.services.llm_service import send_llm_response
+from app.services.tts_service import TTSSession
 
 router = APIRouter()
 
-# Track concurrent connections
+# Track concurrent connections with an asyncio-safe lock
 _active_connections: int = 0
+_connections_lock: asyncio.Lock = asyncio.Lock()
+
+
+async def _increment_connections() -> int:
+    global _active_connections
+    async with _connections_lock:
+        _active_connections += 1
+        return _active_connections
+
+
+async def _decrement_connections() -> int:
+    global _active_connections
+    async with _connections_lock:
+        _active_connections = max(0, _active_connections - 1)
+        return _active_connections
 
 
 @router.websocket("/ws")
@@ -49,20 +65,22 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close()
         return
 
-    if _active_connections >= settings.MAX_CONCURRENT_CONNECTIONS:
-        await websocket.send_text(json.dumps({"error": "Too many connections. Please wait."}))
-        await websocket.close()
-        return
+    async with _connections_lock:
+        if _active_connections >= settings.MAX_CONCURRENT_CONNECTIONS:
+            await websocket.send_text(json.dumps({"error": "Too many connections. Please wait."}))
+            await websocket.close()
+            return
 
-    _active_connections += 1
-    print(f"✅ Client connected (active: {_active_connections})")
+    active = await _increment_connections()
+    print(f"✅ Client connected (active: {active})")
 
-    # Load conversation history from MongoDB for this user
-    memory = await get_memory_for_user(google_id)
-    conversation_history = memory.recent_summaries if memory else []
+    # Load raw conversation history from MongoDB for this user
+    conversation_history: list = await get_conversation_for_user(google_id)
     latest_user_input: str = ""
     current_task: asyncio.Task | None = None
     tts_ws = None
+    # Per-connection TTS session — isolates lock/state from other users
+    tts_session = TTSSession()
 
     try:
         # ── Connect to Deepgram ───────────────────────────────────────────────
@@ -127,6 +145,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 websocket,
                                 conversation_history,
                                 tts_ws,
+                                tts_session,
                                 google_id,
                             )
                         )
@@ -168,10 +187,10 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"❌ WebSocket error: {e}")
     finally:
-        _active_connections = max(0, _active_connections - 1)
+        active = await _decrement_connections()
         if tts_ws:
             try:
                 await tts_ws.close()
             except Exception:
                 pass
-        print(f"🚪 Session closed (active: {_active_connections})")
+        print(f"🚪 Session closed (active: {active})")

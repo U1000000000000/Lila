@@ -18,8 +18,11 @@ from concurrent.futures import ThreadPoolExecutor
 from groq import Groq
 
 from app.core.config import settings
-from app.services.memory_mongo_service import save_memory_for_user
-from app.services.tts_service import send_buffer_to_tts
+from app.services.memory_mongo_service import (
+    get_memory_for_user,
+    save_conversation_for_user,
+)
+from app.services.tts_service import send_buffer_to_tts, TTSSession
 
 groq_client = Groq()
 
@@ -97,30 +100,34 @@ async def send_llm_response(
     websocket,
     conversation_history: list,
     tts_ws,
+    tts_session: "TTSSession",
     google_id: str = None,
 ) -> None:
     """
     Generate and stream an LLM response for `user_input`.
     Groq runs in a thread; TTS drains the sentence queue concurrently.
     Supports barge-in cancellation via asyncio.CancelledError.
+    tts_session is a per-connection TTSSession (lock + task ref).
     """
     conversation_history.append({"role": "user", "content": user_input})
 
-    # Slide the context window — overflow goes to background summarisation
+    # Slide the context window — keep only the most recent N messages
     if len(conversation_history) > settings.CONVERSATION_WINDOW:
-        overflow = conversation_history[: len(conversation_history) - settings.CONVERSATION_WINDOW]
-        memory_service.summarization_queue.append(overflow)
-        conversation_history[:] = conversation_history[-settings.CONVERSATION_WINDOW :]
+        conversation_history[:] = conversation_history[-settings.CONVERSATION_WINDOW:]
 
-    # Build system prompt — inject memory only when the user explicitly asks
+    # Build system prompt — inject persistent memory only when user explicitly asks
     system_prompt = _SYSTEM_PROMPT_BASE
     needs_memory = any(kw in user_input.lower() for kw in _MEMORY_KEYWORDS)
-    if needs_memory:
-        if memory_service.long_term_memory:
-            system_prompt += f"\n\n[Long-term memory]: {memory_service.long_term_memory}"
-        if memory_service.summarized_facts:
-            recent = "; ".join(memory_service.summarized_facts[-3:])
-            system_prompt += f"\n\n[Recent context]: {recent}"
+    if needs_memory and google_id:
+        mem = await get_memory_for_user(google_id)
+        if mem:
+            if mem.long_term_summary:
+                system_prompt += f"\n\n[Long-term memory]: {mem.long_term_summary}"
+            if mem.recent_summaries:
+                recent = "; ".join(
+                    s.text for s in mem.recent_summaries[-3:]
+                )
+                system_prompt += f"\n\n[Recent context]: {recent}"
 
     messages = [{"role": "system", "content": system_prompt}] + conversation_history
     sentence_queue: asyncio.Queue = asyncio.Queue()
@@ -143,27 +150,17 @@ async def send_llm_response(
             if sentence is _SENTINEL:
                 break
             full_response += sentence + " "
-            await send_buffer_to_tts(sentence, websocket, tts_ws)
+            await send_buffer_to_tts(sentence, websocket, tts_ws, tts_session)
 
         # Ensure the producer thread has fully exited
         await groq_future
 
-        # Persist assistant turn
+        # Persist assistant turn and save raw conversation to MongoDB
         conversation_history.append({"role": "assistant", "content": full_response.strip()})
 
-        # Periodic MongoDB save (per user)
         if google_id:
-            # Transform conversation_history to MemoryFact schema
-            from datetime import datetime
-            memory_facts = []
-            for msg in conversation_history:
-                memory_facts.append({
-                    "text": msg.get("content", ""),
-                    "source_messages": [msg],
-                    "created_at": datetime.utcnow()
-                })
-            await save_memory_for_user(google_id, long_term_summary="", recent_summaries=memory_facts)
-            print(f"\n💾 Memory saved to MongoDB for user {google_id} ({len(memory_facts)} messages)")
+            await save_conversation_for_user(google_id, conversation_history)
+            print(f"\n💾 Conversation saved to MongoDB for user {google_id} ({len(conversation_history)} messages)")
         else:
             print("\n❌ Not authenticated: chat not saved")
 

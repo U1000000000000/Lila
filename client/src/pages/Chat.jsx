@@ -13,6 +13,9 @@ export default function Chat() {
   const [transcript, setTranscript] = useState("");
   const [msgCount, setMsgCount] = useState(0);
   const [responseTime, setResponseTime] = useState("--");
+
+  // Owned here, passed into the hook so both sides share the same object.
+  // The hook stamps .current on every audio chunk; handleAudio reads it.
   const lastUserSpeechTime = useRef(0);
   const { audioRef, push: pushAudio } = useAudioQueue();
 
@@ -34,14 +37,14 @@ export default function Chat() {
     onTranscript: handleTranscript,
     onAudio: handleAudio,
     onMsgCount: setMsgCount,
+    // Hook will write to this ref each time the user sends audio
+    speechTimeRef: lastUserSpeechTime,
     // Don't connect until auth is confirmed
     enabled: !loading && isAuthenticated,
   });
 
+  // Redirect unauthenticated users only after the async check resolves
   React.useEffect(() => {
-    // Only redirect once the auth check has fully resolved.
-    // Without the `!loading` guard, the page always redirected to /login
-    // on first render because isAuthenticated starts as false (async check).
     if (!loading && !isAuthenticated) {
       navigate("/login");
     }

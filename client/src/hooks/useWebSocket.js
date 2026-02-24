@@ -17,12 +17,17 @@ const SAMPLE_RATE = 24000;
 /**
  * Manages the WebSocket connection, microphone recording, and message routing.
  *
- * @param {{ onStatus, onTranscript, onAudio, onMsgCount }} callbacks
- * @returns {{ wsRef, lastUserSpeechTime }}
+ * @param {{ onStatus, onTranscript, onAudio, onMsgCount, enabled, speechTimeRef }} options
+ *   speechTimeRef — optional React ref (MutableRefObject<number>) whose .current
+ *   is stamped with Date.now() each time the user sends an audio chunk.
+ *   Pass your own ref from the parent component to share the timestamp.
+ * @returns {{ wsRef }}
  */
-export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount }) {
+export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enabled = true, speechTimeRef = null }) {
   const wsRef = useRef(null);
-  const lastUserSpeechTime = useRef(0);
+  // Fallback internal ref if caller did not supply one
+  const _internalSpeechRef = useRef(0);
+  const lastUserSpeechTime = speechTimeRef ?? _internalSpeechRef;
 
   const connect = useCallback(() => {
     let ws;
@@ -126,9 +131,12 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount }) {
   }, [onStatus, onTranscript, onAudio, onMsgCount]);
 
   useEffect(() => {
+    // Do NOT open a WebSocket until auth is confirmed — avoids a
+    // race where connect() fires before the token is available.
+    if (!enabled) return;
     const cleanup = connect();
     return cleanup;
-  }, [connect]);
+  }, [connect, enabled]);
 
-  return { wsRef, lastUserSpeechTime };
+  return { wsRef };
 }
