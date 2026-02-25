@@ -29,7 +29,12 @@ class Settings:
     # ── Server ─────────────────────────────────────────────────────────────────
     PORT: int = int(os.environ.get("PORT", 8000))
     MAX_CONCURRENT_CONNECTIONS: int = int(os.environ.get("MAX_CONCURRENT_CONNECTIONS", 10))
-
+    CORS_ORIGINS: list[str] = [
+        origin.strip() for origin in os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(",")
+    ]
+    FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+    GOOGLE_REDIRECT_URI: str = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/v1/auth/google/callback")
+    
     # ── Memory / Conversation ──────────────────────────────────────────────────
     CONVERSATION_WINDOW: int = 15    # sliding window — last N messages kept hot
     SAVE_INTERVAL: int = 5           # persist to DB every N messages

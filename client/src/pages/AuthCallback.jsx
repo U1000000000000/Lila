@@ -2,7 +2,7 @@
  * AuthCallback — landing page for the Google OAuth redirect.
  *
  * The backend redirects here as:
- *   http://localhost:5173/auth/callback?token=<JWT>
+ *   [VITE_FRONTEND_URL]/auth/callback?token=<JWT>
  *
  * We store the token in sessionStorage so it persists across page refreshes
  * within the same browser tab, then navigate to /chat.

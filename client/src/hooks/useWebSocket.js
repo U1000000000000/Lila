@@ -20,9 +20,15 @@ const SAMPLE_RATE = 24000;
  * @param {{ onStatus, onTranscript, onAudio, onMsgCount }} callbacks
  * @returns {{ wsRef, lastUserSpeechTime }}
  */
-export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount }) {
+export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enabled = true }) {
   const wsRef = useRef(null);
   const lastUserSpeechTime = useRef(0);
+
+  // Keep latest callbacks in refs so we don't reconnect purely because a function changed
+  const callbacksRef = useRef({ onStatus, onTranscript, onAudio, onMsgCount });
+  useEffect(() => {
+    callbacksRef.current = { onStatus, onTranscript, onAudio, onMsgCount };
+  }, [onStatus, onTranscript, onAudio, onMsgCount]);
 
   const connect = useCallback(() => {
     let ws;
@@ -37,8 +43,9 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount }) {
 
       ws.onopen = () => {
         retryCount = 0;
-        onStatus("🟢 Connected — speak naturally!");
+        callbacksRef.current.onStatus("🟢 Connected — speak naturally!");
         setTimeout(() => {
+
           if (ws.readyState === 1) startRecording();
         }, 100);
       };
@@ -48,7 +55,7 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount }) {
         if (message.data instanceof Blob && message.data.size > 0) {
           const buf = await message.data.arrayBuffer();
           const wavBlob = convertPCMToWav(buf, SAMPLE_RATE);
-          if (wavBlob) onAudio(URL.createObjectURL(wavBlob));
+          if (wavBlob) callbacksRef.current.onAudio(URL.createObjectURL(wavBlob));
           return;
         }
 
@@ -57,8 +64,8 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount }) {
           const received = JSON.parse(message.data);
           if (received.type === "ping") return;            // keep-alive
           if (received.response) {
-            onTranscript(received.response);
-            onMsgCount((c) => c + 1);
+            callbacksRef.current.onTranscript(received.response);
+            callbacksRef.current.onMsgCount((c) => c + 1);
           }
         } catch {
           // ignore malformed
@@ -77,14 +84,14 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount }) {
         if (retryCount < 5 && event.code !== 1000) {
           retryCount++;
           const delay = Math.min(5000, 1000 * 2 ** retryCount);
-          onStatus(`🔴 Reconnecting in ${delay / 1000}s… (${retryCount}/5)`);
+          callbacksRef.current.onStatus(`🔴 Reconnecting in ${delay / 1000}s… (${retryCount}/5)`);
           reconnectTimeout = setTimeout(connectWebSocket, delay);
         } else {
-          onStatus(event.code === 1000 ? "🔴 Disconnected" : "❌ Connection lost. Refresh the page.");
+          callbacksRef.current.onStatus(event.code === 1000 ? "🔴 Disconnected" : "❌ Connection lost. Refresh the page.");
         }
       };
 
-      ws.onerror = () => onStatus("❌ WebSocket error");
+      ws.onerror = () => callbacksRef.current.onStatus("❌ WebSocket error");
     }
 
     function startRecording() {
@@ -103,13 +110,13 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount }) {
           };
           mediaRecorder.onerror = (err) => {
             console.error("MediaRecorder error:", err);
-            onStatus("❌ Recording error");
+            callbacksRef.current.onStatus("❌ Recording error");
           };
           mediaRecorder.start(100);
         })
         .catch((err) => {
           console.error("Microphone error:", err);
-          onStatus("❌ Microphone access denied");
+          callbacksRef.current.onStatus("❌ Microphone access denied");
         });
     }
 
@@ -123,12 +130,13 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount }) {
       if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
       if (stream) stream.getTracks().forEach((t) => t.stop());
     };
-  }, [onStatus, onTranscript, onAudio, onMsgCount]);
+  }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     const cleanup = connect();
     return cleanup;
-  }, [connect]);
+  }, [connect, enabled]);
 
   return { wsRef, lastUserSpeechTime };
 }

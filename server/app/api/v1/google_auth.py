@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, JSONResponse
 from app.core.google_oauth import get_google_login_url, exchange_code_for_token, get_user_info
 from app.core.security import create_access_token
+from app.core.config import settings
 from app.services.user_service import create_or_update_user
 import os
 
@@ -27,14 +28,14 @@ async def google_callback(request: Request, code: str = None, state: str = None)
     # Store user in MongoDB
     user = await create_or_update_user(user_info["email"], user_info["name"], user_info.get("picture"))
     # Issue JWT
-    jwt_token = create_access_token({
+    token = create_access_token({
         "sub": user.email,
         "name": user.name,
         "google_id": user.google_id
     })
-    # Redirect to frontend with token as a URL param.
-    # This sidesteps cross-origin cookie restrictions between :8000 and :5173
-    # (the browser won't send a :8000 cookie back to :5173 fetch requests).
-    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
-    redirect_url = f"{frontend_url}/auth/callback?token={jwt_token}"
+    # 4) Send token to frontend
+    # Since we use window.location.href to start OAuth, we must redirect back.
+    # We pass the token in the URL fragment or query string.
+    frontend_url = settings.FRONTEND_URL
+    redirect_url = f"{frontend_url}/auth/callback?token={token}"
     return RedirectResponse(url=redirect_url, status_code=302)

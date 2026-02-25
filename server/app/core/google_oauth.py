@@ -4,12 +4,15 @@ Handles login URL generation, callback, token exchange, and JWT issuance.
 """
 import os
 import requests
+import httpx
 from urllib.parse import urlencode
-from fastapi import Request, HTTPException
+from fastapi import HTTPException
+from app.core.config import settings
 
+# In production, ensure these are loaded via .environ.get("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
-GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/v1/auth/google/callback")
+GOOGLE_REDIRECT_URI = settings.GOOGLE_REDIRECT_URI
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"

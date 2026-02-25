@@ -3,15 +3,18 @@ fastapi
 uvicorn[standard]
 websockets
 python-dotenv
+email-validator
 
 # ── AI Services ───────────────────────────────────────────────────────────────
 groq
 deepgram-sdk          # optional — we use raw WS, but useful for future SDK use
 
 # ── Database (add when wiring up MongoDB) ─────────────────────────────────────
-# motor                 # async MongoDB driver
-# beanie                # ODM on top of motor
+motor                 # async MongoDB driver
+beanie                # ODM on top of motor
 
 # ── Auth (add when implementing auth) ────────────────────────────────────────
-# python-jose[cryptography]   # JWT
-# passlib[bcrypt]             # password hashing
+python-jose[cryptography]   # JWT
+passlib[bcrypt]             # password hashing
+PyJWT                       # required for import jwt in security.py
+requests                    # required for google_oauth.py
