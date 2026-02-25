@@ -47,7 +47,10 @@ export default function Login() {
       <div className="absolute top-[40%] left-[60%] -translate-x-1/2 -translate-y-1/2 w-[300px] h-[400px] bg-[#8B5CF6] rounded-full opacity-[0.04] blur-[100px] pointer-events-none z-0"></div>
 
       {/* --- Header / Logo --- */}
-      <div className="absolute top-8 left-8 md:top-12 md:left-12 flex items-center gap-3 select-none z-20 opacity-90 hover:opacity-100 transition-opacity">
+      <div
+        className="absolute top-8 left-8 md:top-12 md:left-12 flex items-center gap-3 select-none z-20 opacity-90 hover:opacity-100 transition-opacity cursor-pointer"
+        onClick={() => navigate("/")}
+      >
         <Logo className="w-8 h-8" glow />
         <span className="text-white/90 text-[20px] font-medium tracking-wide">
           Lila

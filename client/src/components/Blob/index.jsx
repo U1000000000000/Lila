@@ -18,24 +18,24 @@ const Blob = ({ state = "idle" }) => {
   useFrame((_, delta) => {
     if (mesh.current) {
       // Determine target values based on state
-      let targetIntensity = 0.1;
-      let targetSpeed = 0.3;
+      let targetIntensity = 0.05;
+      let targetSpeed = 0.15;
       // Darker Lavender #8B5CF6
       let targetColor = new Color(139 / 255, 92 / 255, 246 / 255);
 
       if (state === "listening") {
-        targetIntensity = 0.3;
-        targetSpeed = 0.6;
+        targetIntensity = 0.15;
+        targetSpeed = 0.3;
         // Core Lavender #A78BFA
         targetColor = new Color(167 / 255, 139 / 255, 250 / 255);
       } else if (state === "computing") {
-        targetIntensity = 0.6;
-        targetSpeed = 1.8;
+        targetIntensity = 0.3;
+        targetSpeed = 0.6;
         // Lighter Lavender #C4B5FD
         targetColor = new Color(196 / 255, 181 / 255, 253 / 255);
       } else if (state === "speaking") {
-        targetIntensity = 0.9;
-        targetSpeed = 1.2;
+        targetIntensity = 0.4;
+        targetSpeed = 0.4;
         // Bright White Lavender #F5F3FF
         targetColor = new Color(245 / 255, 243 / 255, 255 / 255);
       }
@@ -56,7 +56,7 @@ const Blob = ({ state = "idle" }) => {
   });
 
   return (
-    <mesh ref={mesh} scale={1.2} position={[0, 0, 0]}>
+    <mesh ref={mesh} scale={0.9} position={[0, 0, 0]}>
       <icosahedronGeometry args={[2, 20]} />
       <shaderMaterial
         vertexShader={vertexShader}

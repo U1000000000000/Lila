@@ -1,8 +1,8 @@
 /**
- * API Service — centralised REST client (placeholder).
- * Will use axios or fetch with JWT auth header injection.
+ * API Service — centralised REST client.
+ * Wraps fetch with JWT auth header injection and base URL resolution.
  *
- * Usage (future):
+ * Usage:
  *   import { api } from "./api";
  *   const user = await api.get("/users/me");
  */

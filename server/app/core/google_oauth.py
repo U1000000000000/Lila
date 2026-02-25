@@ -22,6 +22,11 @@ SCOPES = ["openid", "email", "profile"]
 
 
 def get_google_login_url(state: str) -> str:
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            status_code=500,
+            detail="Google OAuth is not configured. Missing GOOGLE_CLIENT_ID.",
+        )
     params = {
         "client_id": GOOGLE_CLIENT_ID,
         "redirect_uri": GOOGLE_REDIRECT_URI,
@@ -42,14 +47,25 @@ def exchange_code_for_token(code: str) -> dict:
         "redirect_uri": GOOGLE_REDIRECT_URI,
         "grant_type": "authorization_code",
     }
-    resp = requests.post(GOOGLE_TOKEN_URL, data=data)
-    if not resp.ok:
-        raise HTTPException(status_code=400, detail="Failed to exchange code for token")
+    # Mask secret for logging so we don't leak it, but we can verify what's happening
+    masked_data = data.copy()
+    masked_data["client_secret"] = f"{GOOGLE_CLIENT_SECRET[:10]}...{GOOGLE_CLIENT_SECRET[-4:]}" if GOOGLE_CLIENT_SECRET else "MISSING"
+    print(f"Exchanging code with payload: {masked_data}")
+    
+    # Use httpx post which is standard in async FastAPI environments
+    with httpx.Client() as client:
+        resp = client.post(GOOGLE_TOKEN_URL, data=data)
+    
+    if resp.status_code != 200:
+        error_msg = f"Failed to exchange code for token. Google response: {resp.text}"
+        print(f"OAuth Error: {error_msg}")
+        raise HTTPException(status_code=400, detail=error_msg)
     return resp.json()
 
 
 def get_user_info(access_token: str) -> dict:
-    resp = requests.get(GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"})
-    if not resp.ok:
+    with httpx.Client() as client:
+        resp = client.get(GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"})
+    if resp.status_code != 200:
         raise HTTPException(status_code=400, detail="Failed to fetch user info")
     return resp.json()

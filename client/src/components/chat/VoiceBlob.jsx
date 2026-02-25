@@ -10,10 +10,10 @@ export default function VoiceBlob({ state }) {
         <Blob state={state} />
         <EffectComposer disableNormalPass>
           <Bloom
-            luminanceThreshold={0.1}
+            luminanceThreshold={0.5}
             mipmapBlur
-            intensity={1.2}
-            radius={0.6}
+            intensity={0.3}
+            radius={0.3}
           />
         </EffectComposer>
       </Canvas>

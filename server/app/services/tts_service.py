@@ -2,33 +2,37 @@
 TTS Service
 -----------
 Wraps Deepgram Text-to-Speech WebSocket.
-Handles locking to prevent audio mixing, cancellation, and buffering.
+
+TTSSession encapsulates per-connection lock and current task reference,
+ensuring TTS requests from different users never interfere with each other.
 """
 import asyncio
 import json
 
-from app.core.config import settings
 
-# Prevents simultaneous TTS requests from interleaving audio
-tts_lock = asyncio.Lock()
-current_tts_task: asyncio.Task | None = None
+class TTSSession:
+    """Holds per-WebSocket-connection TTS state. Create one per /ws connection."""
+
+    def __init__(self) -> None:
+        self.lock: asyncio.Lock = asyncio.Lock()
+        self.current_task: asyncio.Task | None = None
 
 
-async def send_buffer_to_tts(text: str, websocket, tts_ws) -> None:
+async def send_buffer_to_tts(text: str, websocket, tts_ws, session: TTSSession) -> None:
     """
     Send a text sentence to Deepgram TTS and stream raw PCM audio back
-    to the frontend WebSocket. Uses tts_lock to serialise requests.
+    to the frontend WebSocket.  Uses a per-session lock to serialise
+    requests so concurrent users never interleave audio.
     """
-    global current_tts_task
 
     print(f"\n🎤 TTS ← '{text}'")
 
     # Surface text to frontend immediately (before audio arrives)
     await websocket.send_text(json.dumps({"response": text + " "}))
 
-    async with tts_lock:
+    async with session.lock:
         try:
-            current_tts_task = asyncio.current_task()
+            session.current_task = asyncio.current_task()
 
             await tts_ws.send(json.dumps({"type": "Speak", "text": text}))
             await tts_ws.send(json.dumps({"type": "Flush"}))
@@ -71,5 +75,5 @@ async def send_buffer_to_tts(text: str, websocket, tts_ws) -> None:
             print(f"❌ TTS error: {e}")
 
         finally:
-            if current_tts_task == asyncio.current_task():
-                current_tts_task = None
+            if session.current_task == asyncio.current_task():
+                session.current_task = None

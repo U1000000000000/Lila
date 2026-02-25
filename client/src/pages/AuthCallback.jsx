@@ -28,8 +28,10 @@ export default function AuthCallback() {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
-      <p className="text-gray-400">Completing sign-in…</p>
+    <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center">
+      <p className="text-white/30 text-[13px] font-light tracking-wide">
+        Completing sign-in…
+      </p>
     </div>
   );
 }

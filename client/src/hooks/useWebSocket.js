@@ -17,24 +17,66 @@ const SAMPLE_RATE = 24000;
 /**
  * Manages the WebSocket connection, microphone recording, and message routing.
  *
- * @param {{ onStatus, onTranscript, onAudio, onMsgCount }} callbacks
- * @returns {{ wsRef, lastUserSpeechTime }}
+ * @param {{ onStatus, onTranscript, onAudio, onMsgCount, enabled, speechTimeRef }} options
+ *   speechTimeRef — optional React ref (MutableRefObject<number>) whose .current
+ *   is stamped with Date.now() each time the user sends an audio chunk.
+ *   Pass your own ref from the parent component to share the timestamp.
+ * @returns {{ wsRef }}
  */
-export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enabled = true }) {
+export function useWebSocket({ onStatus, onTranscript, onUserTranscript, onAudio, onMsgCount, enabled = true, speechTimeRef = null }) {
   const wsRef = useRef(null);
-  const lastUserSpeechTime = useRef(0);
-
-  // Keep latest callbacks in refs so we don't reconnect purely because a function changed
-  const callbacksRef = useRef({ onStatus, onTranscript, onAudio, onMsgCount });
+  const mediaRecorderRef = useRef(null);
+  const streamRef = useRef(null);
+  
+  // Keep fresh references to callbacks so we don't need them in the dependency array
+  const callbacksRef = useRef({ onStatus, onTranscript, onUserTranscript, onAudio, onMsgCount });
   useEffect(() => {
-    callbacksRef.current = { onStatus, onTranscript, onAudio, onMsgCount };
-  }, [onStatus, onTranscript, onAudio, onMsgCount]);
+    callbacksRef.current = { onStatus, onTranscript, onUserTranscript, onAudio, onMsgCount };
+  }, [onStatus, onTranscript, onUserTranscript, onAudio, onMsgCount]);
+
+  // Fallback internal ref if caller did not supply one
+  const _internalSpeechRef = useRef(0);
+  const lastUserSpeechTime = speechTimeRef ?? _internalSpeechRef;
+
+  const startRecording = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== 1) return;
+
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((s) => {
+        streamRef.current = s;
+        mediaRecorderRef.current = new window.MediaRecorder(s, { mimeType: "audio/webm" });
+        mediaRecorderRef.current.ondataavailable = (event) => {
+          if (event.data.size > 0 && wsRef.current?.readyState === 1) {
+            wsRef.current.send(event.data);
+            lastUserSpeechTime.current = Date.now();
+          }
+        };
+        mediaRecorderRef.current.onerror = (err) => {
+          console.error("MediaRecorder error:", err);
+          callbacksRef.current.onStatus("❌ Recording error");
+        };
+        mediaRecorderRef.current.start(100);
+      })
+      .catch((err) => {
+        console.error("Microphone error:", err);
+        callbacksRef.current.onStatus("❌ Microphone access denied");
+      });
+  }, [lastUserSpeechTime]);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  }, []);
 
   const connect = useCallback(() => {
     let ws;
     let reconnectTimeout;
-    let mediaRecorder;
-    let stream;
     let retryCount = 0;
 
     function connectWebSocket() {
@@ -45,8 +87,7 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enab
         retryCount = 0;
         callbacksRef.current.onStatus("🟢 Connected — speak naturally!");
         setTimeout(() => {
-
-          if (ws.readyState === 1) startRecording();
+          if (wsRef.current && wsRef.current.readyState === 1) startRecording();
         }, 100);
       };
 
@@ -63,9 +104,14 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enab
         try {
           const received = JSON.parse(message.data);
           if (received.type === "ping") return;            // keep-alive
+          // AI response text
           if (received.response) {
             callbacksRef.current.onTranscript(received.response);
             callbacksRef.current.onMsgCount((c) => c + 1);
+          }
+          // User's own speech text (STT)
+          if (received.transcript) {
+            callbacksRef.current.onUserTranscript?.(received.transcript);
           }
         } catch {
           // ignore malformed
@@ -73,13 +119,9 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enab
       };
 
       ws.onclose = (event) => {
-        console.log("WebSocket closed:", event.code, event.reason);
         // Clean up microphone
-        if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
-        if (stream) {
-          stream.getTracks().forEach((t) => t.stop());
-          stream = null;
-        }
+        stopRecording();
+        
         // Reconnect unless it was a clean close
         if (retryCount < 5 && event.code !== 1000) {
           retryCount++;
@@ -94,32 +136,6 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enab
       ws.onerror = () => callbacksRef.current.onStatus("❌ WebSocket error");
     }
 
-    function startRecording() {
-      if (!ws || ws.readyState !== 1) return;
-
-      navigator.mediaDevices
-        .getUserMedia({ audio: true })
-        .then((s) => {
-          stream = s;
-          mediaRecorder = new window.MediaRecorder(stream, { mimeType: "audio/webm" });
-          mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0 && ws?.readyState === 1) {
-              ws.send(event.data);
-              lastUserSpeechTime.current = Date.now();
-            }
-          };
-          mediaRecorder.onerror = (err) => {
-            console.error("MediaRecorder error:", err);
-            callbacksRef.current.onStatus("❌ Recording error");
-          };
-          mediaRecorder.start(100);
-        })
-        .catch((err) => {
-          console.error("Microphone error:", err);
-          callbacksRef.current.onStatus("❌ Microphone access denied");
-        });
-    }
-
     connectWebSocket();
 
     // Return cleanup
@@ -127,16 +143,17 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enab
       retryCount = 99; // prevent reconnects
       if (ws) ws.close();
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
-      if (stream) stream.getTracks().forEach((t) => t.stop());
+      stopRecording();
     };
-  }, []);
+  }, [stopRecording, startRecording]);
 
   useEffect(() => {
+    // Do NOT open a WebSocket until auth is confirmed — avoids a
+    // race where connect() fires before the token is available.
     if (!enabled) return;
     const cleanup = connect();
     return cleanup;
   }, [connect, enabled]);
 
-  return { wsRef, lastUserSpeechTime };
+  return { wsRef, startRecording, stopRecording };
 }

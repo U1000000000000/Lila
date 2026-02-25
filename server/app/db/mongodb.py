@@ -20,6 +20,7 @@ async def connect_db():
     await db["users"].create_index("google_id", unique=True)
     await db["users"].create_index("email", unique=True)
     await db["memories"].create_index("google_id", unique=True)
+    await db["conversations"].create_index("google_id", unique=True)
     print("✅ MongoDB connected and indexes ensured")
 
 async def close_db():
