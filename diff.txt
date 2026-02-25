@@ -1,0 +1,1461 @@
+﻿diff --git a/.gitignore b/.gitignore
+index fcfd5d0..f84d85f 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,4 +1,5 @@
+ # Python
++.venv/
+ venv/
+ __pycache__/
+ *.pyc
+diff --git a/client/src/App.jsx b/client/src/App.jsx
+index 0e48fdc..204d07b 100644
+--- a/client/src/App.jsx
++++ b/client/src/App.jsx
+@@ -3,28 +3,92 @@
+  * All page content lives in src/pages/.
+  * All shared UI lives in src/components/.
+  */
+-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
++import { useEffect } from "react";
++import {
++  BrowserRouter,
++  Routes,
++  Route,
++  Navigate,
++  useLocation,
++} from "react-router-dom";
++import Landing from "./pages/Landing";
+ import Chat from "./pages/Chat";
+ import Login from "./pages/Login";
+ import AuthCallback from "./pages/AuthCallback";
+ import Register from "./pages/Register";
+ import Settings from "./pages/Settings";
++import Dashboard from "./pages/Dashboard";
++import History from "./pages/History";
++import About from "./pages/About";
++import Privacy from "./pages/Privacy";
++import Terms from "./pages/Terms";
++import ProtectedRoute from "./components/layout/ProtectedRoute";
++import PageLoader from "./components/ui/PageLoader";
+ import "./App.css";
+ 
++function ScrollToTop() {
++  const { pathname } = useLocation();
++
++  useEffect(() => {
++    window.scrollTo(0, 0);
++  }, [pathname]);
++
++  return null;
++}
++
+ export default function App() {
+   return (
+     <BrowserRouter>
++      <ScrollToTop />
++      <PageLoader />
+       <Routes>
+-        {/* Default ΓåÆ Chat */}
+-        <Route path="/" element={<Navigate to="/chat" replace />} />
+-        <Route path="/chat" element={<Chat />} />
++        {/* Landing Page */}
++        <Route path="/" element={<Landing />} />
++
++        {/* Protected Routes */}
++        <Route
++          path="/chat"
++          element={
++            <ProtectedRoute>
++              <Chat />
++            </ProtectedRoute>
++          }
++        />
++        <Route
++          path="/history"
++          element={
++            <ProtectedRoute>
++              <History />
++            </ProtectedRoute>
++          }
++        />
++        <Route
++          path="/dashboard"
++          element={
++            <ProtectedRoute>
++              <Dashboard />
++            </ProtectedRoute>
++          }
++        />
++        <Route
++          path="/settings"
++          element={
++            <ProtectedRoute>
++              <Settings />
++            </ProtectedRoute>
++          }
++        />
++
++        {/* Public Routes */}
+         <Route path="/login" element={<Login />} />
++        <Route path="/register" element={<Register />} />
++        <Route path="/about" element={<About />} />
++        <Route path="/privacy" element={<Privacy />} />
++        <Route path="/terms" element={<Terms />} />
++
+         {/* Google OAuth drops the user here with ?token=JWT */}
+         <Route path="/auth/callback" element={<AuthCallback />} />
+-        <Route path="/register" element={<Register />} />
+-        <Route path="/settings" element={<Settings />} />
+       </Routes>
+     </BrowserRouter>
+   );
+ }
+-
+diff --git a/client/src/components/Blob/index.jsx b/client/src/components/Blob/index.jsx
+index 0b5a07d..9551250 100644
+--- a/client/src/components/Blob/index.jsx
++++ b/client/src/components/Blob/index.jsx
+@@ -18,24 +18,24 @@ const Blob = ({ state = "idle" }) => {
+   useFrame((_, delta) => {
+     if (mesh.current) {
+       // Determine target values based on state
+-      let targetIntensity = 0.1;
+-      let targetSpeed = 0.3;
++      let targetIntensity = 0.05;
++      let targetSpeed = 0.15;
+       // Darker Lavender #8B5CF6
+       let targetColor = new Color(139 / 255, 92 / 255, 246 / 255);
+ 
+       if (state === "listening") {
+-        targetIntensity = 0.3;
+-        targetSpeed = 0.6;
++        targetIntensity = 0.15;
++        targetSpeed = 0.3;
+         // Core Lavender #A78BFA
+         targetColor = new Color(167 / 255, 139 / 255, 250 / 255);
+       } else if (state === "computing") {
+-        targetIntensity = 0.6;
+-        targetSpeed = 1.8;
++        targetIntensity = 0.3;
++        targetSpeed = 0.6;
+         // Lighter Lavender #C4B5FD
+         targetColor = new Color(196 / 255, 181 / 255, 253 / 255);
+       } else if (state === "speaking") {
+-        targetIntensity = 0.9;
+-        targetSpeed = 1.2;
++        targetIntensity = 0.4;
++        targetSpeed = 0.4;
+         // Bright White Lavender #F5F3FF
+         targetColor = new Color(245 / 255, 243 / 255, 255 / 255);
+       }
+@@ -56,7 +56,7 @@ const Blob = ({ state = "idle" }) => {
+   });
+ 
+   return (
+-    <mesh ref={mesh} scale={1.2} position={[0, 0, 0]}>
++    <mesh ref={mesh} scale={0.9} position={[0, 0, 0]}>
+       <icosahedronGeometry args={[2, 20]} />
+       <shaderMaterial
+         vertexShader={vertexShader}
+diff --git a/client/src/components/chat/ControlDeck.jsx b/client/src/components/chat/ControlDeck.jsx
+index 20bf0ed..68dd921 100644
+--- a/client/src/components/chat/ControlDeck.jsx
++++ b/client/src/components/chat/ControlDeck.jsx
+@@ -1,4 +1,4 @@
+-import React from "react";
++import React, { useState } from "react";
+ import { motion, AnimatePresence } from "framer-motion";
+ import { Mic, Square, Loader2 } from "lucide-react";
+ import { cn } from "../../utils/cn";
+@@ -8,89 +8,93 @@ export default function ControlDeck({
+   onStart,
+   onStop,
+   status,
+-  blobState,
+ }) {
+   const isConnecting = status.toLowerCase().includes("connecting");
+-  const isConnected = isSessionStarted && !status.includes("≡ƒö┤");
++  const [ripple, setRipple] = useState(false);
++  const [shaking, setShaking] = useState(false);
+ 
+-  return (
+-    <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center">
+-      {/* Status Pill */}
+-      <AnimatePresence>
+-        {isSessionStarted && (
+-          <motion.div
+-            initial={{ opacity: 0, y: 10, scale: 0.9 }}
+-            animate={{ opacity: 1, y: 0, scale: 1 }}
+-            exit={{ opacity: 0, y: 10, scale: 0.9 }}
+-            className="mb-6 flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-white/[0.03] border border-white/10 backdrop-blur-md"
+-          >
+-            <div
+-              className={cn(
+-                "w-2 h-2 rounded-full shadow-[0_0_8px_rgba(255,255,255,0.5)] transition-colors duration-500",
+-                blobState === "idle" && "bg-white/40",
+-                blobState === "listening" && "bg-[#A78BFA]",
+-                blobState === "computing" && "bg-[#C4B5FD]",
+-                blobState === "speaking" && "bg-white",
+-                !isConnected && "bg-red-400",
+-              )}
+-            />
+-            <span className="text-[12px] font-medium text-white/70 tracking-widest uppercase">
+-              {status.replace("≡ƒö┤", "").replace("≡ƒƒó", "").trim() || "Status"}
+-            </span>
+-          </motion.div>
+-        )}
+-      </AnimatePresence>
++  const handleStart = () => {
++    setRipple(true);
++    setTimeout(() => setRipple(false), 700);
++    onStart();
++  };
++
++  const handleStop = () => {
++    setShaking(true);
++    setTimeout(() => {
++      setShaking(false);
++      onStop();
++    }, 400);
++  };
+ 
+-      {/* Main Action Button */}
++  return (
++    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center">
+       <motion.button
+         layout
+-        onClick={isSessionStarted ? onStop : onStart}
+-        whileHover={{ scale: 1.05 }}
+-        whileTap={{ scale: 0.95 }}
++        onClick={isSessionStarted ? handleStop : handleStart}
++        whileHover={{ scale: 1.02 }}
++        whileTap={{ scale: 0.97 }}
+         className={cn(
+-          "relative flex items-center justify-center rounded-full transition-all duration-500 ease-out overflow-hidden group outline-none",
++          "relative flex items-center justify-center rounded-[24px] transition-all duration-300 outline-none overflow-visible",
+           !isSessionStarted
+-            ? "h-[56px] w-[210px] bg-transparent backdrop-blur-2xl border border-white/20 shadow-[0_8px_32px_0_rgba(0,0,0,0.2)] hover:bg-white/10 hover:border-white/60 hover:shadow-[0_0_40px_rgba(255,255,255,0.15)]"
+-            : "h-[64px] w-[64px] bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.15)] backdrop-blur-3xl",
++            ? "h-[54px] px-8 bg-white/[0.03] backdrop-blur-md border border-white/[0.08] shadow-[0_4px_24px_rgba(0,0,0,0.2)] hover:bg-white/[0.08] hover:border-white/[0.15] hover:shadow-[0_8px_32px_rgba(255,255,255,0.05)] group"
++            : cn(
++                "h-[54px] px-8 bg-red-500/[0.05] backdrop-blur-md border border-red-500/[0.15] hover:bg-red-500/[0.1] hover:border-red-500/[0.25] shadow-[0_4px_24px_rgba(239,68,68,0.1)] group",
++                shaking && "shake",
++              ),
+         )}
+       >
++        {/* Ripple on start click */}
++        {ripple && (
++          <span className="ripple-ring absolute inset-0 rounded-[24px] border border-white/30 pointer-events-none" />
++        )}
++
+         <AnimatePresence mode="popLayout">
+           {!isSessionStarted ? (
+             <motion.div
+               key="start"
+-              initial={{ opacity: 0, scale: 0.8 }}
+-              animate={{ opacity: 1, scale: 1 }}
+-              exit={{ opacity: 0, scale: 0.8 }}
+-              className="flex items-center gap-3 text-white/90 font-medium tracking-wide relative w-full h-full justify-center"
++              initial={{ opacity: 0, y: 10 }}
++              animate={{ opacity: 1, y: 0 }}
++              exit={{ opacity: 0, y: -10 }}
++              className="flex items-center gap-3 relative w-full h-full justify-center"
+             >
+-              {/* Premium Hover Effects - Monochrome UI */}
+-              {/* 1. Shimmer sweep */}
+-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] pointer-events-none rounded-full"></div>
+-              {/* 2. Top-down inner rim light */}
+-              <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none mix-blend-overlay"></div>
+-              {/* 3. Base subtle glow */}
+-              <div className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.08)_0%,transparent_70%)] pointer-events-none"></div>
+-
+-              {/* Content */}
+-              <div className="relative flex items-center justify-center w-9 h-9 rounded-full bg-white/[0.04] border border-white/10 group-hover:bg-white group-hover:border-white group-hover:shadow-[0_0_15px_rgba(255,255,255,0.4)] transition-all duration-300">
+-                <Mic className="w-4 h-4 text-white/70 group-hover:text-black transition-colors duration-300" />
+-              </div>
+-              <span className="relative z-10 group-hover:text-white transition-colors duration-300">
++              <Mic
++                className={cn(
++                  "w-[16px] h-[16px] text-white/70 group-hover:text-white transition-colors duration-300",
++                )}
++                strokeWidth={2}
++              />
++              <span className="text-[14px] font-medium tracking-wide text-white/80 group-hover:text-white transition-colors duration-300">
+                 Start Session
+               </span>
+             </motion.div>
+           ) : (
+             <motion.div
+               key="stop"
+-              initial={{ opacity: 0, scale: 0.8 }}
+-              animate={{ opacity: 1, scale: 1 }}
+-              exit={{ opacity: 0, scale: 0.8 }}
+-              className="flex items-center justify-center text-red-400"
++              initial={{ opacity: 0, y: 10 }}
++              animate={{ opacity: 1, y: 0 }}
++              exit={{ opacity: 0, y: -10 }}
++              className="flex items-center gap-3 justify-center text-red-400/90 group-hover:text-red-400 transition-colors duration-300"
+             >
+               {isConnecting ? (
+-                <Loader2 className="w-6 h-6 animate-spin" />
++                <>
++                  <Loader2 className="w-[16px] h-[16px] animate-spin" />
++                  <span className="text-[14px] font-medium tracking-wide">
++                    Connecting
++                  </span>
++                </>
+               ) : (
+-                <Square className="w-5 h-5 fill-current" />
++                <>
++                  <Square
++                    className={cn(
++                      "w-[14px] h-[14px] fill-current",
++                      isSessionStarted && "mic-breathe",
++                    )}
++                  />
++                  <span className="text-[14px] font-medium tracking-wide">
++                    End Session
++                  </span>
++                </>
+               )}
+             </motion.div>
+           )}
+diff --git a/client/src/components/chat/TranscriptOverlay.jsx b/client/src/components/chat/TranscriptOverlay.jsx
+index 8905a0b..2106b03 100644
+--- a/client/src/components/chat/TranscriptOverlay.jsx
++++ b/client/src/components/chat/TranscriptOverlay.jsx
+@@ -1,50 +1,149 @@
+-import React from "react";
++import React, { useEffect, useRef, useState } from "react";
+ import { motion, AnimatePresence } from "framer-motion";
+ import { cn } from "../../utils/cn";
+ 
+-export default function TranscriptOverlay({ transcript, isSessionStarted }) {
++export default function TranscriptOverlay({
++  messages = [],
++  isSessionStarted,
++  status,
++  blobState,
++  isAiThinking = false,
++}) {
++  const scrollRef = useRef(null);
++  const isConnected = isSessionStarted && !status.includes("≡ƒö┤");
++
++  useEffect(() => {
++    if (scrollRef.current) {
++      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
++    }
++  }, [messages, isAiThinking]);
++
++  const dotColor = cn(
++    "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors duration-500",
++    blobState === "idle" && "bg-white/30",
++    blobState === "listening" &&
++      "bg-[#A78BFA] shadow-[0_0_6px_rgba(167,139,250,0.5)]",
++    blobState === "computing" &&
++      "bg-[#C4B5FD] shadow-[0_0_6px_rgba(196,181,253,0.5)]",
++    blobState === "speaking" &&
++      "bg-white shadow-[0_0_6px_rgba(255,255,255,0.5)]",
++    !isConnected && "bg-red-400",
++  );
++
++  return (
++    <AnimatePresence>
++      {isSessionStarted && (
++        <motion.div
++          key="transcript-panel"
++          initial={{ opacity: 0, y: 16 }}
++          animate={{ opacity: 1, y: 0 }}
++          exit={{ opacity: 0, y: 16 }}
++          transition={{ duration: 0.35, ease: "easeOut" }}
++          className="absolute bottom-[88px] left-1/2 -translate-x-1/2 w-full max-w-[520px] px-6 z-20 pointer-events-none"
++        >
++          <div className="w-full rounded-[16px] bg-white/[0.03] border border-white/[0.06] backdrop-blur-md overflow-hidden flex flex-col">
++            {/* Status row */}
++            <div className="flex items-center gap-2 px-4 py-2 border-b border-white/[0.05] flex-shrink-0">
++              <div className={dotColor} />
++              <span className="text-[11px] font-medium text-white/40 tracking-[0.1em] uppercase truncate">
++                {status.replace("≡ƒö┤", "").replace("≡ƒƒó", "").trim() || "Status"}
++              </span>
++            </div>
++
++            {/* Chat messages */}
++            <div
++              ref={scrollRef}
++              className="flex flex-col gap-2 px-4 py-3 max-h-[160px] overflow-y-auto no-scroll"
++            >
++              <AnimatePresence initial={false}>
++                {messages.length === 0 && !isAiThinking ? (
++                  <motion.p
++                    key="placeholder"
++                    initial={{ opacity: 0 }}
++                    animate={{ opacity: 1 }}
++                    exit={{ opacity: 0 }}
++                    className="text-[12px] text-white/25 italic text-center"
++                  >
++                    Start speakingΓÇª
++                  </motion.p>
++                ) : (
++                  <>
++                    {messages.map((msg, i) => (
++                      <MessageBubble key={i} msg={msg} index={i} />
++                    ))}
++                    {/* AI Typing indicator */}
++                    {isAiThinking && (
++                      <motion.div
++                        key="typing"
++                        initial={{ opacity: 0, y: 6, scale: 0.95 }}
++                        animate={{ opacity: 1, y: 0, scale: 1 }}
++                        exit={{ opacity: 0, scale: 0.9 }}
++                        className="flex justify-start"
++                      >
++                        <span className="flex items-center gap-1 bg-[#A78BFA]/[0.12] rounded-[12px] rounded-bl-[4px] px-3 py-2">
++                          <span className="typing-dot w-1.5 h-1.5 rounded-full bg-white/60" />
++                          <span className="typing-dot w-1.5 h-1.5 rounded-full bg-white/60" />
++                          <span className="typing-dot w-1.5 h-1.5 rounded-full bg-white/60" />
++                        </span>
++                      </motion.div>
++                    )}
++                  </>
++                )}
++              </AnimatePresence>
++            </div>
++          </div>
++        </motion.div>
++      )}
++    </AnimatePresence>
++  );
++}
++
++function MessageBubble({ msg, index }) {
++  const [showTime, setShowTime] = useState(false);
++  const time = new Date().toLocaleTimeString([], {
++    hour: "2-digit",
++    minute: "2-digit",
++  });
++
+   return (
+-    <div
++    <motion.div
++      initial={{ opacity: 0, y: 10, scale: 0.94 }}
++      animate={{ opacity: 1, y: 0, scale: 1 }}
++      transition={{
++        duration: 0.22,
++        ease: "easeOut",
++        delay: Math.min(index * 0.04, 0.2),
++      }}
+       className={cn(
+-        "absolute bottom-40 left-1/2 -translate-x-1/2 w-full max-w-[700px] px-8 z-20 pointer-events-none transition-all duration-1000 ease-out",
+-        isSessionStarted
+-          ? "opacity-100 translate-y-0"
+-          : "opacity-0 translate-y-12",
++        "flex flex-col",
++        msg.role === "user" ? "items-end" : "items-start",
+       )}
++      onMouseEnter={() => setShowTime(true)}
++      onMouseLeave={() => setShowTime(false)}
+     >
+-      {/* We use a mask-image to fade out the top of the transcript text organically */}
+-      <div
+-        className="max-h-[160px] overflow-hidden flex flex-col justify-end pb-4"
+-        style={{
+-          maskImage:
+-            "linear-gradient(to bottom, transparent, black 40%, black 100%)",
+-          WebkitMaskImage:
+-            "linear-gradient(to bottom, transparent, black 40%, black 100%)",
+-        }}
++      <span
++        className={cn(
++          "max-w-[80%] rounded-[12px] px-3 py-1.5 text-[13px] leading-[1.6] font-normal pointer-events-auto",
++          msg.role === "user"
++            ? "bg-white/[0.08] text-white/90 rounded-br-[4px]"
++            : "bg-[#A78BFA]/[0.12] text-white/80 rounded-bl-[4px]",
++        )}
+       >
+-        <AnimatePresence mode="wait">
+-          {!transcript ? (
+-            <motion.p
+-              key="empty"
+-              initial={{ opacity: 0, y: 10 }}
+-              animate={{ opacity: 0.3, y: 0 }}
+-              exit={{ opacity: 0, y: -10 }}
+-              className="text-[18px] text-center italic text-white/50 tracking-wide font-light"
+-            >
+-              Start speaking, Lila is listening...
+-            </motion.p>
+-          ) : (
+-            <motion.p
+-              key="transcript"
+-              initial={{ opacity: 0, y: 10 }}
+-              animate={{ opacity: 1, y: 0 }}
+-              className="text-[20px] md:text-[24px] text-center leading-relaxed text-white/95 font-medium tracking-wide drop-shadow-md"
+-            >
+-              {transcript}
+-            </motion.p>
+-          )}
+-        </AnimatePresence>
+-      </div>
+-    </div>
++        {msg.text}
++      </span>
++      <AnimatePresence>
++        {showTime && (
++          <motion.span
++            initial={{ opacity: 0, y: -4 }}
++            animate={{ opacity: 1, y: 0 }}
++            exit={{ opacity: 0, y: -4 }}
++            transition={{ duration: 0.15 }}
++            className="text-[10px] text-white/25 mt-0.5 px-1"
++          >
++            {time}
++          </motion.span>
++        )}
++      </AnimatePresence>
++    </motion.div>
+   );
+ }
+diff --git a/client/src/components/chat/VoiceBlob.jsx b/client/src/components/chat/VoiceBlob.jsx
+index a814379..67cd357 100644
+--- a/client/src/components/chat/VoiceBlob.jsx
++++ b/client/src/components/chat/VoiceBlob.jsx
+@@ -10,10 +10,10 @@ export default function VoiceBlob({ state }) {
+         <Blob state={state} />
+         <EffectComposer disableNormalPass>
+           <Bloom
+-            luminanceThreshold={0.1}
++            luminanceThreshold={0.5}
+             mipmapBlur
+-            intensity={1.2}
+-            radius={0.6}
++            intensity={0.3}
++            radius={0.3}
+           />
+         </EffectComposer>
+       </Canvas>
+diff --git a/client/src/hooks/useWebSocket.js b/client/src/hooks/useWebSocket.js
+index b0616f7..17ef49c 100644
+--- a/client/src/hooks/useWebSocket.js
++++ b/client/src/hooks/useWebSocket.js
+@@ -23,17 +23,60 @@ const SAMPLE_RATE = 24000;
+  *   Pass your own ref from the parent component to share the timestamp.
+  * @returns {{ wsRef }}
+  */
+-export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enabled = true, speechTimeRef = null }) {
++export function useWebSocket({ onStatus, onTranscript, onUserTranscript, onAudio, onMsgCount, enabled = true, speechTimeRef = null }) {
+   const wsRef = useRef(null);
++  const mediaRecorderRef = useRef(null);
++  const streamRef = useRef(null);
++  
++  // Keep fresh references to callbacks so we don't need them in the dependency array
++  const callbacksRef = useRef({ onStatus, onTranscript, onUserTranscript, onAudio, onMsgCount });
++  useEffect(() => {
++    callbacksRef.current = { onStatus, onTranscript, onUserTranscript, onAudio, onMsgCount };
++  }, [onStatus, onTranscript, onUserTranscript, onAudio, onMsgCount]);
++
+   // Fallback internal ref if caller did not supply one
+   const _internalSpeechRef = useRef(0);
+   const lastUserSpeechTime = speechTimeRef ?? _internalSpeechRef;
+ 
++  const startRecording = useCallback(() => {
++    if (!wsRef.current || wsRef.current.readyState !== 1) return;
++
++    navigator.mediaDevices
++      .getUserMedia({ audio: true })
++      .then((s) => {
++        streamRef.current = s;
++        mediaRecorderRef.current = new window.MediaRecorder(s, { mimeType: "audio/webm" });
++        mediaRecorderRef.current.ondataavailable = (event) => {
++          if (event.data.size > 0 && wsRef.current?.readyState === 1) {
++            wsRef.current.send(event.data);
++            lastUserSpeechTime.current = Date.now();
++          }
++        };
++        mediaRecorderRef.current.onerror = (err) => {
++          console.error("MediaRecorder error:", err);
++          callbacksRef.current.onStatus("Γ¥î Recording error");
++        };
++        mediaRecorderRef.current.start(100);
++      })
++      .catch((err) => {
++        console.error("Microphone error:", err);
++        callbacksRef.current.onStatus("Γ¥î Microphone access denied");
++      });
++  }, [lastUserSpeechTime]);
++
++  const stopRecording = useCallback(() => {
++    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
++      mediaRecorderRef.current.stop();
++    }
++    if (streamRef.current) {
++      streamRef.current.getTracks().forEach((t) => t.stop());
++      streamRef.current = null;
++    }
++  }, []);
++
+   const connect = useCallback(() => {
+     let ws;
+     let reconnectTimeout;
+-    let mediaRecorder;
+-    let stream;
+     let retryCount = 0;
+ 
+     function connectWebSocket() {
+@@ -44,8 +87,7 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enab
+         retryCount = 0;
+         callbacksRef.current.onStatus("≡ƒƒó Connected ΓÇö speak naturally!");
+         setTimeout(() => {
+-
+-          if (ws.readyState === 1) startRecording();
++          if (wsRef.current && wsRef.current.readyState === 1) startRecording();
+         }, 100);
+       };
+ 
+@@ -62,23 +104,24 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enab
+         try {
+           const received = JSON.parse(message.data);
+           if (received.type === "ping") return;            // keep-alive
++          // AI response text
+           if (received.response) {
+             callbacksRef.current.onTranscript(received.response);
+             callbacksRef.current.onMsgCount((c) => c + 1);
+           }
++          // User's own speech text (STT)
++          if (received.transcript) {
++            callbacksRef.current.onUserTranscript?.(received.transcript);
++          }
+         } catch {
+           // ignore malformed
+         }
+       };
+ 
+       ws.onclose = (event) => {
+-        console.log("WebSocket closed:", event.code, event.reason);
+         // Clean up microphone
+-        if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+-        if (stream) {
+-          stream.getTracks().forEach((t) => t.stop());
+-          stream = null;
+-        }
++        stopRecording();
++        
+         // Reconnect unless it was a clean close
+         if (retryCount < 5 && event.code !== 1000) {
+           retryCount++;
+@@ -93,32 +136,6 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enab
+       ws.onerror = () => callbacksRef.current.onStatus("Γ¥î WebSocket error");
+     }
+ 
+-    function startRecording() {
+-      if (!ws || ws.readyState !== 1) return;
+-
+-      navigator.mediaDevices
+-        .getUserMedia({ audio: true })
+-        .then((s) => {
+-          stream = s;
+-          mediaRecorder = new window.MediaRecorder(stream, { mimeType: "audio/webm" });
+-          mediaRecorder.ondataavailable = (event) => {
+-            if (event.data.size > 0 && ws?.readyState === 1) {
+-              ws.send(event.data);
+-              lastUserSpeechTime.current = Date.now();
+-            }
+-          };
+-          mediaRecorder.onerror = (err) => {
+-            console.error("MediaRecorder error:", err);
+-            callbacksRef.current.onStatus("Γ¥î Recording error");
+-          };
+-          mediaRecorder.start(100);
+-        })
+-        .catch((err) => {
+-          console.error("Microphone error:", err);
+-          callbacksRef.current.onStatus("Γ¥î Microphone access denied");
+-        });
+-    }
+-
+     connectWebSocket();
+ 
+     // Return cleanup
+@@ -126,10 +143,9 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enab
+       retryCount = 99; // prevent reconnects
+       if (ws) ws.close();
+       if (reconnectTimeout) clearTimeout(reconnectTimeout);
+-      if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+-      if (stream) stream.getTracks().forEach((t) => t.stop());
++      stopRecording();
+     };
+-  }, []);
++  }, [stopRecording, startRecording]);
+ 
+   useEffect(() => {
+     // Do NOT open a WebSocket until auth is confirmed ΓÇö avoids a
+@@ -139,5 +155,5 @@ export function useWebSocket({ onStatus, onTranscript, onAudio, onMsgCount, enab
+     return cleanup;
+   }, [connect, enabled]);
+ 
+-  return { wsRef };
++  return { wsRef, startRecording, stopRecording };
+ }
+diff --git a/client/src/index.css b/client/src/index.css
+index b3e1ec9..81e85fa 100644
+--- a/client/src/index.css
++++ b/client/src/index.css
+@@ -17,6 +17,15 @@ body {
+   min-height: 100vh;
+   -webkit-font-smoothing: antialiased;
+   -moz-osx-font-smoothing: grayscale;
++
++  /* Hide scrollbar for everywhere */
++  scrollbar-width: none; /* Firefox */
++  -ms-overflow-style: none;  /* IE and Edge */
++}
++
++/* Hide scrollbar for Chrome, Safari and Opera */
++body::-webkit-scrollbar {
++  display: none;
+ }
+ 
+ h1 {
+@@ -31,14 +40,58 @@ button {
+   font-size: 1em;
+   font-weight: 500;
+   font-family: inherit;
+-  background-color: #1a1a1a;
++  background-color: transparent;
+   cursor: pointer;
+   transition: border-color 0.25s;
+ }
+ button:hover {
+-  border-color: #646cff;
++  border-color: transparent;
+ }
+ button:focus,
+ button:focus-visible {
+-  outline: 4px auto -webkit-focus-ring-color;
++  outline: none;
++}
++
++/* ΓöÇΓöÇ Ripple animation ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
++@keyframes ripple-out {
++  0%   { transform: scale(0.8); opacity: 0.6; }
++  100% { transform: scale(2.8); opacity: 0; }
++}
++.ripple-ring {
++  animation: ripple-out 0.7s ease-out forwards;
++}
++
++/* ΓöÇΓöÇ Mic breathing ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
++@keyframes mic-breathe {
++  0%, 100% { opacity: 0.6; transform: scale(1); }
++  50%       { opacity: 1;   transform: scale(1.12); }
+ }
++.mic-breathe {
++  animation: mic-breathe 1.8s ease-in-out infinite;
++}
++
++/* ΓöÇΓöÇ Typing dots ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
++@keyframes typing-bounce {
++  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
++  40%           { transform: translateY(-5px); opacity: 1; }
++}
++.typing-dot {
++  animation: typing-bounce 1.2s ease-in-out infinite;
++}
++.typing-dot:nth-child(2) { animation-delay: 0.2s; }
++.typing-dot:nth-child(3) { animation-delay: 0.4s; }
++
++/* ΓöÇΓöÇ Shake animation ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
++@keyframes shake {
++  0%, 100% { transform: translateX(0); }
++  20%       { transform: translateX(-4px); }
++  40%       { transform: translateX(4px); }
++  60%       { transform: translateX(-3px); }
++  80%       { transform: translateX(3px); }
++}
++.shake {
++  animation: shake 0.4s ease-in-out;
++}
++
++/* ΓöÇΓöÇ Scrollbar hide ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
++.no-scroll::-webkit-scrollbar { display: none; }
+diff --git a/client/src/pages/AuthCallback.jsx b/client/src/pages/AuthCallback.jsx
+index af26fa5..a032694 100644
+--- a/client/src/pages/AuthCallback.jsx
++++ b/client/src/pages/AuthCallback.jsx
+@@ -28,8 +28,10 @@ export default function AuthCallback() {
+   }, [navigate]);
+ 
+   return (
+-    <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+-      <p className="text-gray-400">Completing sign-inΓÇª</p>
++    <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center">
++      <p className="text-white/30 text-[13px] font-light tracking-wide">
++        Completing sign-inΓÇª
++      </p>
+     </div>
+   );
+ }
+diff --git a/client/src/pages/Chat.jsx b/client/src/pages/Chat.jsx
+index 31a1940..6e87788 100644
+--- a/client/src/pages/Chat.jsx
++++ b/client/src/pages/Chat.jsx
+@@ -1,33 +1,46 @@
+ import React, { useCallback, useRef, useState } from "react";
++import { useNavigate } from "react-router-dom";
++import { useAuth } from "../hooks/useAuth";
+ import { useAudioQueue } from "../hooks/useAudioQueue";
+ import { useWebSocket } from "../hooks/useWebSocket";
+ import Logo from "../components/ui/Logo";
+ import VoiceBlob from "../components/chat/VoiceBlob";
+ import TranscriptOverlay from "../components/chat/TranscriptOverlay";
+ import ControlDeck from "../components/chat/ControlDeck";
++import Footer from "../components/ui/Footer";
++import { motion } from "framer-motion";
+ import { LayoutDashboard, User } from "lucide-react";
+ 
+ export default function Chat() {
++  const { isAuthenticated, loading } = useAuth();
++
+   const [status, setStatus] = useState("≡ƒö┤ Not Connected");
+-  const [transcript, setTranscript] = useState("");
+-  const [msgCount, setMsgCount] = useState(0);
+-  const [responseTime, setResponseTime] = useState("--");
++  const [messages, setMessages] = useState([]);
++  const [isSessionStarted, setIsSessionStarted] = useState(false);
++  const [blobState, setBlobState] = useState("idle");
++  const [isAiThinking, setIsAiThinking] = useState(false);
+ 
+-  // Owned here, passed into the hook so both sides share the same object.
+-  // The hook stamps .current on every audio chunk; handleAudio reads it.
+   const lastUserSpeechTime = useRef(0);
+   const { audioRef, push: pushAudio } = useAudioQueue();
+ 
+   const handleAudio = useCallback(
+     (url) => {
+       lastUserSpeechTime.current = Date.now();
++      setIsAiThinking(false);
+       pushAudio(url);
+     },
+     [pushAudio],
+   );
+ 
+   const handleTranscript = useCallback((text) => {
+-    setTranscript((t) => t + text + " ");
++    setIsAiThinking(false);
++    setMessages((prev) => [...prev, { role: "ai", text }]);
++  }, []);
++
++  const handleUserTranscript = useCallback((text) => {
++    if (!text.trim()) return;
++    setMessages((prev) => [...prev, { role: "user", text }]);
++    setIsAiThinking(true); // user spoke ΓåÆ AI is now thinking
+   }, []);
+ 
+   useWebSocket({
+@@ -42,6 +55,7 @@ export default function Chat() {
+       const sLower = s.toLowerCase();
+       if (sLower.includes("speak")) {
+         setBlobState("speaking");
++        setIsAiThinking(false);
+       } else if (
+         sLower.includes("process") ||
+         sLower.includes("handl") ||
+@@ -49,93 +63,135 @@ export default function Chat() {
+         sLower.includes("comput")
+       ) {
+         setBlobState("computing");
++        setIsAiThinking(true);
+       } else {
+-        setBlobState("listening"); // default when connected and not actively speaking/processing
++        setBlobState("listening");
+       }
+     },
+     onTranscript: handleTranscript,
++    onUserTranscript: handleUserTranscript,
+     onAudio: handleAudio,
+-    onMsgCount: setMsgCount,
+-    // Hook will write to this ref each time the user sends audio
++    onMsgCount: () => {},
+     speechTimeRef: lastUserSpeechTime,
+-    // Don't connect until auth is confirmed
+-    enabled: !loading && isAuthenticated,
++    enabled: !loading && isAuthenticated && isSessionStarted,
+   });
+ 
+-  // Redirect unauthenticated users only after the async check resolves
+-  React.useEffect(() => {
+-    if (!loading && !isAuthenticated) {
+-      navigate("/login");
+-    }
+-  }, [loading, isAuthenticated, navigate]);
+-
+-  // ΓöÇΓöÇ Early returns (AFTER all hooks) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-  if (loading) {
+-    return (
+-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+-        <p className="text-gray-400">LoadingΓÇª</p>
+-      </div>
+-    );
+-  }
++  const handleStartSession = useCallback(() => {
++    setIsSessionStarted(true);
++    setMessages([]);
++    setIsAiThinking(false);
++    setBlobState("listening");
++  }, []);
+ 
+-  if (!isAuthenticated) {
+-    // navigate() was already called in the effect; render nothing while it fires
+-    return null;
+-  }
++  const handleStopSession = useCallback(() => {
++    setIsSessionStarted(false);
++    setIsAiThinking(false);
++    setBlobState("idle");
++  }, []);
+ 
+-  return (
+-    <div className="min-h-screen bg-black text-white font-sans relative flex flex-col items-center justify-center selection:bg-[#A78BFA]/30 selection:text-white overflow-hidden">
+-      {/* 1. Ambient Generative Background Noise */}
+-      <div
+-        className="absolute inset-0 z-0 opacity-[0.03] pointer-events-none mix-blend-screen"
+-        style={{
+-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+-        }}
+-      ></div>
+-
+-      {/* 2. Deep purple glowing orbs (Static) */}
+-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] md:w-[900px] md:h-[900px] bg-[#A78BFA] rounded-full opacity-[0.06] blur-[120px] pointer-events-none z-0"></div>
+-      <div className="absolute top-[40%] left-[60%] -translate-x-1/2 -translate-y-1/2 w-[300px] h-[400px] bg-[#8B5CF6] rounded-full opacity-[0.04] blur-[100px] pointer-events-none z-0"></div>
+-
+-      {/* 2. 3D Voice Blob with Post Processing Bloom */}
+-      <VoiceBlob state={isSessionStarted ? blobState : "idle"} />
+-
+-      {/* 3. Header / Logo */}
+-      <div className="absolute top-8 left-8 md:top-12 md:left-12 flex items-center gap-3 select-none z-20 opacity-90 hover:opacity-100 transition-opacity">
+-        <Logo className="w-8 h-8" glow />
+-        <span className="text-white/90 text-[20px] font-medium tracking-wide drop-shadow-md">
+-          Lila
+-        </span>
+-      </div>
++  const navigate = useNavigate();
+ 
+-      {/* Top Right Navigation */}
+-      <div className="absolute top-8 right-8 md:top-12 md:right-12 flex items-center gap-4 z-20">
+-        <button className="group flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-white/[0.02] border border-white/[0.05] text-white/70 font-medium text-[13px] tracking-wide hover:bg-white/[0.06] hover:text-white hover:border-white/[0.15] hover:shadow-[0_0_20px_rgba(255,255,255,0.05)] transition-all duration-300 backdrop-blur-xl">
+-          <LayoutDashboard className="w-4 h-4 text-white/50 group-hover:text-white transition-colors duration-300" />
+-          Dashboard
+-        </button>
+-        <button className="group relative flex items-center justify-center w-[42px] h-[42px] rounded-full bg-white/[0.02] border border-white/[0.05] text-white/70 hover:bg-white/[0.06] hover:text-white hover:border-white/[0.15] hover:shadow-[0_0_20px_rgba(255,255,255,0.05)] transition-all duration-300 backdrop-blur-xl overflow-hidden">
+-          <User className="w-4 h-4 text-white/50 group-hover:text-white transition-colors duration-300 relative z-10" />
+-        </button>
++  return (
++    <div className="bg-black text-white font-sans selection:bg-[#A78BFA]/30 selection:text-white flex flex-col">
++      {/* ΓöÇΓöÇ Chat viewport ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
++      <div className="min-h-screen relative flex flex-col items-center justify-center overflow-hidden">
++        {/* 1. Ambient Generative Background Noise */}
++        <div
++          className="fixed inset-0 z-0 opacity-[0.03] pointer-events-none mix-blend-screen"
++          style={{
++            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
++          }}
++        />
++
++        {/* 2. Drifting ambient orbs */}
++        <motion.div
++          className="fixed top-1/2 left-1/2 w-[600px] h-[600px] md:w-[900px] md:h-[900px] bg-[#A78BFA] rounded-full opacity-[0.06] blur-[120px] pointer-events-none z-0"
++          animate={{
++            x: ["-50%", "-48%", "-52%", "-50%"],
++            y: ["-50%", "-52%", "-48%", "-50%"],
++          }}
++          transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
++          style={{ top: "50%", left: "50%" }}
++        />
++        <motion.div
++          className="fixed w-[300px] h-[400px] bg-[#8B5CF6] rounded-full opacity-[0.04] blur-[100px] pointer-events-none z-0"
++          animate={{
++            x: ["-50%", "-53%", "-47%", "-50%"],
++            y: ["-50%", "-47%", "-53%", "-50%"],
++          }}
++          transition={{
++            duration: 24,
++            repeat: Infinity,
++            ease: "easeInOut",
++            delay: 3,
++          }}
++          style={{ top: "40%", left: "60%" }}
++        />
++
++        {/* 3. 3D Voice Blob */}
++        <VoiceBlob state={isSessionStarted ? blobState : "idle"} />
++
++        {/* 4. Header / Logo with hover animation */}
++        {/* ΓöÇΓöÇ Absolutely Positioned Header to Match Login & AppShell ΓöÇΓöÇΓöÇ */}
++        <header className="absolute inset-x-0 top-0 z-30 h-24 pointer-events-none">
++          {/* Left: Logo */}
++          <div
++            className="absolute top-8 left-8 md:top-12 md:left-12 flex items-center gap-3 select-none cursor-pointer pointer-events-auto opacity-90 hover:opacity-100 transition-opacity"
++            onClick={() => navigate("/chat")}
++          >
++            <motion.div
++              whileHover={{ rotate: [0, -8, 8, -4, 0] }}
++              transition={{ duration: 0.5, ease: "easeInOut" }}
++            >
++              <Logo className="w-8 h-8" glow />
++            </motion.div>
++            <span className="text-white/90 text-[20px] font-medium tracking-wide">
++              Lila
++            </span>
++          </div>
++
++          {/* Right side: Navigation & Profile */}
++          <div className="absolute top-8 right-8 md:top-12 md:right-12 flex items-center gap-3 pointer-events-auto">
++            <button
++              onClick={() => navigate("/dashboard")}
++              className="flex items-center gap-2.5 px-5 h-10 bg-white/[0.03] backdrop-blur-md border border-white/[0.08] rounded-full text-white/70 hover:text-white hover:bg-white/[0.08] hover:border-white/[0.15] shadow-[0_4px_24px_-4px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_32px_-8px_rgba(255,255,255,0.05)] transition-all duration-300"
++            >
++              <LayoutDashboard className="w-[14px] h-[14px]" strokeWidth={2} />
++              <span className="text-[13px] font-medium tracking-wide">
++                Dashboard
++              </span>
++            </button>
++            <button className="flex items-center justify-center w-10 h-10 bg-white/[0.03] backdrop-blur-md border border-white/[0.08] rounded-full hover:bg-white/[0.08] hover:border-white/[0.15] shadow-[0_4px_24px_-4px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_32px_-8px_rgba(255,255,255,0.05)] transition-all duration-300">
++              <User
++                className="w-[18px] h-[18px]"
++                strokeWidth={1.8}
++                color="rgba(255,255,255,0.7)"
++              />
++            </button>
++          </div>
++        </header>
++
++        {/* 6. Transcript */}
++        <TranscriptOverlay
++          messages={messages}
++          isSessionStarted={isSessionStarted}
++          status={status}
++          blobState={blobState}
++          isAiThinking={isAiThinking}
++        />
++
++        {/* 7. Control Deck */}
++        <ControlDeck
++          isSessionStarted={isSessionStarted}
++          status={status}
++          onStart={handleStartSession}
++          onStop={handleStopSession}
++        />
++
++        <audio ref={audioRef} className="hidden" />
+       </div>
+-
+-      {/* 4. Cinematic Transcript Overlay */}
+-      <TranscriptOverlay
+-        transcript={transcript}
+-        isSessionStarted={isSessionStarted}
+-      />
+-
+-      {/* 5. Production Grade Control Deck (Start/Stop & Status) */}
+-      <ControlDeck
+-        isSessionStarted={isSessionStarted}
+-        status={status}
+-        blobState={blobState}
+-        onStart={() => setIsSessionStarted(true)}
+-        onStop={handleStopSession}
+-      />
+-
+-      {/* Hidden audio element for TTS queue */}
+-      <audio ref={audioRef} className="hidden" />
++      {/* end chat viewport */}
++      <Footer />
+     </div>
+   );
+ }
+diff --git a/client/src/pages/Login.jsx b/client/src/pages/Login.jsx
+index 0c34159..f1abe82 100644
+--- a/client/src/pages/Login.jsx
++++ b/client/src/pages/Login.jsx
+@@ -47,7 +47,10 @@ export default function Login() {
+       <div className="absolute top-[40%] left-[60%] -translate-x-1/2 -translate-y-1/2 w-[300px] h-[400px] bg-[#8B5CF6] rounded-full opacity-[0.04] blur-[100px] pointer-events-none z-0"></div>
+ 
+       {/* --- Header / Logo --- */}
+-      <div className="absolute top-8 left-8 md:top-12 md:left-12 flex items-center gap-3 select-none z-20 opacity-90 hover:opacity-100 transition-opacity">
++      <div
++        className="absolute top-8 left-8 md:top-12 md:left-12 flex items-center gap-3 select-none z-20 opacity-90 hover:opacity-100 transition-opacity cursor-pointer"
++        onClick={() => navigate("/")}
++      >
+         <Logo className="w-8 h-8" glow />
+         <span className="text-white/90 text-[20px] font-medium tracking-wide">
+           Lila
+diff --git a/client/src/pages/Settings.jsx b/client/src/pages/Settings.jsx
+index 6ed3e61..19b6cb9 100644
+--- a/client/src/pages/Settings.jsx
++++ b/client/src/pages/Settings.jsx
+@@ -1,11 +1,298 @@
+-/**
+- * Settings page ΓÇö placeholder.
+- * Will let the user configure voice, memory preferences, and account details.
+- */
+-export default function Settings() {
++import React, { useState } from "react";
++import { motion, AnimatePresence } from "framer-motion";
++import {
++  UserCircle,
++  Mic2,
++  SlidersHorizontal,
++  ChevronDown,
++  Check,
++} from "lucide-react";
++import AppShell from "../components/layout/AppShell";
++import { cn } from "../utils/cn";
++
++const LANGUAGES = [
++  "English (US)",
++  "Spanish (ES)",
++  "French (FR)",
++  "German (DE)",
++  "Hindi (IN)",
++  "Japanese (JP)",
++];
++
++function Toggle({ checked, onChange }) {
++  return (
++    <button
++      onClick={() => onChange(!checked)}
++      className={cn(
++        "relative w-11 h-6 rounded-full transition-colors duration-300 flex-shrink-0",
++        checked ? "bg-[#A78BFA]" : "bg-white/[0.08]",
++      )}
++    >
++      <span
++        className={cn(
++          "absolute top-0.5 w-5 h-5 rounded-full transition-all duration-300 flex items-center justify-center",
++          checked ? "left-[22px] bg-white" : "left-0.5 bg-white/40",
++        )}
++      >
++        {checked && (
++          <Check className="w-2.5 h-2.5 text-[#A78BFA]" strokeWidth={3} />
++        )}
++      </span>
++    </button>
++  );
++}
++
++function Slider({
++  label,
++  min,
++  max,
++  value,
++  onChange,
++  leftLabel,
++  midLabel,
++  rightLabel,
++  valueLabel,
++}) {
+   return (
+-    <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+-      <p className="text-gray-500">Settings ΓÇö coming soon</p>
++    <div className="flex-1">
++      <div className="flex justify-between items-center mb-2">
++        <span className="text-[12px] text-white/50">{label}</span>
++        <span className="text-[12px] text-[#A78BFA] font-medium">
++          {valueLabel}
++        </span>
++      </div>
++      <input
++        type="range"
++        min={min}
++        max={max}
++        value={value}
++        onChange={(e) => onChange(Number(e.target.value))}
++        className="w-full h-0.5 accent-[#A78BFA] bg-white/[0.08] rounded-full appearance-none cursor-pointer"
++      />
++      <div className="flex justify-between mt-1.5">
++        <span className="text-[10px] text-white/20">{leftLabel}</span>
++        {midLabel && (
++          <span className="text-[10px] text-white/20">{midLabel}</span>
++        )}
++        <span className="text-[10px] text-white/20">{rightLabel}</span>
++      </div>
+     </div>
+   );
+ }
++
++const fadeUp = (delay = 0) => ({
++  initial: { opacity: 0, y: 14 },
++  animate: { opacity: 1, y: 0 },
++  transition: { duration: 0.35, ease: "easeOut", delay },
++});
++
++const SectionHeader = ({ icon: Icon, title }) => (
++  <div className="flex items-center gap-2.5 mb-5">
++    <Icon className="w-5 h-5 text-[#A78BFA]" strokeWidth={1.8} />
++    <h2 className="text-[18px] font-semibold text-white">{title}</h2>
++  </div>
++);
++
++export default function Settings() {
++  const DEFAULTS = {
++    displayName: "Elena Richardson",
++    email: "elena.r@example.com",
++    language: "English (US)",
++    autoDetect: false,
++    correction: true,
++    reminders: true,
++  };
++  const [saved, setSaved] = useState(DEFAULTS);
++
++  // Live editable state
++  const [displayName, setDisplayName] = useState(saved.displayName);
++  const [email, setEmail] = useState(saved.email);
++  const [language, setLanguage] = useState(saved.language);
++  const [autoDetect, setAutoDetect] = useState(saved.autoDetect);
++  const [correction, setCorrection] = useState(saved.correction);
++  const [reminders, setReminders] = useState(saved.reminders);
++
++  // Show action bar only when something changed
++  const isDirty =
++    displayName !== saved.displayName ||
++    email !== saved.email ||
++    language !== saved.language ||
++    autoDetect !== saved.autoDetect ||
++    correction !== saved.correction ||
++    reminders !== saved.reminders;
++
++  const handleDiscard = () => {
++    setDisplayName(saved.displayName);
++    setEmail(saved.email);
++    setLanguage(saved.language);
++    setAutoDetect(saved.autoDetect);
++    setCorrection(saved.correction);
++    setReminders(saved.reminders);
++  };
++
++  const handleSave = () => {
++    setSaved({
++      displayName,
++      email,
++      language,
++      autoDetect,
++      correction,
++      reminders,
++    });
++  };
++
++  return (
++    <AppShell activeNav="Settings">
++      <div className="max-w-[680px] w-full mx-auto px-6 py-10 pb-28">
++        {/* Page title */}
++        <motion.div {...fadeUp(0)} className="mb-8">
++          <h1 className="text-[28px] font-semibold text-white mb-1">
++            Settings
++          </h1>
++          <p className="text-[13px] text-white/35">
++            Manage your profile, voice preferences, and application settings.
++          </p>
++        </motion.div>
++
++        {/* ΓöÇΓöÇ Account ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
++        <motion.section {...fadeUp(0.05)} className="mb-8">
++          <SectionHeader icon={UserCircle} title="Account" />
++          <div className="grid grid-cols-2 gap-4 mb-4">
++            <div>
++              <label className="text-[11px] text-white/35 mb-1.5 block">
++                Display Name
++              </label>
++              <input
++                value={displayName}
++                onChange={(e) => setDisplayName(e.target.value)}
++                className="w-full px-4 py-2.5 rounded-[10px] bg-white/[0.04] border border-white/[0.08] text-[13px] text-white/80 focus:outline-none focus:border-[#A78BFA]/50 transition-colors"
++              />
++            </div>
++            <div>
++              <label className="text-[11px] text-white/35 mb-1.5 block">
++                Email Address
++              </label>
++              <input
++                value={email}
++                onChange={(e) => setEmail(e.target.value)}
++                className="w-full px-4 py-2.5 rounded-[10px] bg-white/[0.04] border border-white/[0.08] text-[13px] text-white/50 focus:outline-none focus:border-[#A78BFA]/50 transition-colors"
++              />
++            </div>
++          </div>
++          <div>
++            <label className="text-[11px] text-white/35 mb-1.5 block">
++              Native Language
++            </label>
++            <div className="relative">
++              <select
++                value={language}
++                onChange={(e) => setLanguage(e.target.value)}
++                className="w-full px-4 py-2.5 pr-10 rounded-[10px] bg-white/[0.04] border border-white/[0.08] text-[13px] text-white/70 appearance-none focus:outline-none focus:border-[#A78BFA]/50 transition-colors"
++              >
++                {LANGUAGES.map((l) => (
++                  <option key={l} value={l} className="bg-[#1a1a1a]">
++                    {l}
++                  </option>
++                ))}
++              </select>
++              <ChevronDown
++                className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none"
++                strokeWidth={2}
++              />
++            </div>
++          </div>
++        </motion.section>
++
++        {/* ΓöÇΓöÇ Voice & Audio ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
++        <motion.section {...fadeUp(0.1)} className="mb-8">
++          <SectionHeader icon={Mic2} title="Voice & Audio" />
++
++          <div className="rounded-[14px] bg-white/[0.03] border border-white/[0.07] px-6 py-8 flex flex-col items-center justify-center text-center gap-3">
++            <div className="w-10 h-10 rounded-full bg-[#A78BFA]/10 border border-[#A78BFA]/20 flex items-center justify-center mb-1">
++              <Mic2 className="w-4 h-4 text-[#A78BFA]/60" strokeWidth={1.8} />
++            </div>
++            <span className="text-[11px] font-semibold tracking-[0.15em] uppercase px-3 py-1 rounded-full bg-[#A78BFA]/10 text-[#A78BFA]/70 border border-[#A78BFA]/20">
++              Coming Soon
++            </span>
++            <p className="text-[13px] text-white/30 max-w-[280px] leading-relaxed mt-1">
++              Voice selection and audio preferences will be available in an
++              upcoming update.
++            </p>
++          </div>
++        </motion.section>
++
++        {/* ΓöÇΓöÇ Preferences ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
++        <motion.section {...fadeUp(0.15)}>
++          <SectionHeader icon={SlidersHorizontal} title="Preferences" />
++          <div className="flex flex-col gap-3">
++            {[
++              {
++                label: "Auto-detect Language",
++                desc: "Switch languages automatically during conversation",
++                key: "autoDetect",
++                val: autoDetect,
++                set: setAutoDetect,
++              },
++              {
++                label: "Correction Feedback",
++                desc: "Interrupt to correct grammar mistakes immediately",
++                key: "correction",
++                val: correction,
++                set: setCorrection,
++              },
++              {
++                label: "Daily Reminders",
++                desc: "Receive notifications to maintain your streak",
++                key: "reminders",
++                val: reminders,
++                set: setReminders,
++              },
++            ].map(({ label, desc, key, val, set }) => (
++              <div
++                key={key}
++                className="flex items-center justify-between px-4 py-3.5 rounded-[12px] bg-white/[0.03] border border-white/[0.07] hover:bg-white/[0.05] transition-colors"
++              >
++                <div>
++                  <p className="text-[13px] font-medium text-white/85">
++                    {label}
++                  </p>
++                  <p className="text-[11px] text-white/35 mt-0.5">{desc}</p>
++                </div>
++                <Toggle checked={val} onChange={set} />
++              </div>
++            ))}
++          </div>
++        </motion.section>
++      </div>
++
++      {/* ΓöÇΓöÇ Sticky action bar ΓÇö only visible when there are unsaved changes ΓöÇΓöÇ */}
++      <AnimatePresence>
++        {isDirty && (
++          <motion.div
++            key="action-bar"
++            initial={{ y: 80, opacity: 0 }}
++            animate={{ y: 0, opacity: 1 }}
++            exit={{ y: 80, opacity: 0 }}
++            transition={{ type: "spring", stiffness: 320, damping: 30 }}
++            className="fixed bottom-0 left-0 right-0 z-20 border-t border-white/[0.06] bg-black/80 backdrop-blur-xl px-8 py-4 flex justify-end gap-3"
++          >
++            <button
++              onClick={handleDiscard}
++              className="px-6 py-2.5 rounded-[10px] text-[13px] text-white/50 hover:text-white/80 transition-colors"
++            >
++              Discard Changes
++            </button>
++            <motion.button
++              whileHover={{ scale: 1.03 }}
++              whileTap={{ scale: 0.97 }}
++              onClick={handleSave}
++              className="px-6 py-2.5 rounded-[10px] bg-[#A78BFA] hover:bg-[#9b77fa] text-white text-[13px] font-semibold transition-colors shadow-[0_4px_20px_rgba(167,139,250,0.3)]"
++            >
++              Save Settings
++            </motion.button>
++          </motion.div>
++        )}
++      </AnimatePresence>
++    </AppShell>
++  );
++}
+diff --git a/client/src/services/api.js b/client/src/services/api.js
+index d50b554..c30a6f7 100644
+--- a/client/src/services/api.js
++++ b/client/src/services/api.js
+@@ -1,8 +1,8 @@
+ /**
+- * API Service ΓÇö centralised REST client (placeholder).
+- * Will use axios or fetch with JWT auth header injection.
++ * API Service ΓÇö centralised REST client.
++ * Wraps fetch with JWT auth header injection and base URL resolution.
+  *
+- * Usage (future):
++ * Usage:
+  *   import { api } from "./api";
+  *   const user = await api.get("/users/me");
+  */
+diff --git a/server/app/core/google_oauth.py b/server/app/core/google_oauth.py
+index a654ae0..aeaf0c0 100644
+--- a/server/app/core/google_oauth.py
++++ b/server/app/core/google_oauth.py
+@@ -22,6 +22,11 @@ SCOPES = ["openid", "email", "profile"]
+ 
+ 
+ def get_google_login_url(state: str) -> str:
++    if not GOOGLE_CLIENT_ID:
++        raise HTTPException(
++            status_code=500,
++            detail="Google OAuth is not configured. Missing GOOGLE_CLIENT_ID.",
++        )
+     params = {
+         "client_id": GOOGLE_CLIENT_ID,
+         "redirect_uri": GOOGLE_REDIRECT_URI,
+@@ -42,14 +47,25 @@ def exchange_code_for_token(code: str) -> dict:
+         "redirect_uri": GOOGLE_REDIRECT_URI,
+         "grant_type": "authorization_code",
+     }
+-    resp = requests.post(GOOGLE_TOKEN_URL, data=data)
+-    if not resp.ok:
+-        raise HTTPException(status_code=400, detail="Failed to exchange code for token")
++    # Mask secret for logging so we don't leak it, but we can verify what's happening
++    masked_data = data.copy()
++    masked_data["client_secret"] = f"{GOOGLE_CLIENT_SECRET[:10]}...{GOOGLE_CLIENT_SECRET[-4:]}" if GOOGLE_CLIENT_SECRET else "MISSING"
++    print(f"Exchanging code with payload: {masked_data}")
++    
++    # Use httpx post which is standard in async FastAPI environments
++    with httpx.Client() as client:
++        resp = client.post(GOOGLE_TOKEN_URL, data=data)
++    
++    if resp.status_code != 200:
++        error_msg = f"Failed to exchange code for token. Google response: {resp.text}"
++        print(f"OAuth Error: {error_msg}")
++        raise HTTPException(status_code=400, detail=error_msg)
+     return resp.json()
+ 
+ 
+ def get_user_info(access_token: str) -> dict:
+-    resp = requests.get(GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"})
+-    if not resp.ok:
++    with httpx.Client() as client:
++        resp = client.get(GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"})
++    if resp.status_code != 200:
+         raise HTTPException(status_code=400, detail="Failed to fetch user info")
+     return resp.json()

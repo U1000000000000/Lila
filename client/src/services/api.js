@@ -1,13 +1,13 @@
 /**
- * API Service — centralised REST client (placeholder).
- * Will use axios or fetch with JWT auth header injection.
+ * API Service — centralised REST client.
+ * Wraps fetch with JWT auth header injection and base URL resolution.
  *
- * Usage (future):
+ * Usage:
  *   import { api } from "./api";
  *   const user = await api.get("/users/me");
  */
 
-// Relative URL — Vite proxy forwards /api → localhost:8000 in dev.
+// Base URL draws from environment variable in production, but uses Vite Proxy (/api/v1) in local dev.
 const BASE_URL = import.meta.env.VITE_API_URL || "/api/v1";
 
 /** Read JWT from sessionStorage and return as Authorization header. */

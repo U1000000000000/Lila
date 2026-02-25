@@ -1,0 +1,47 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="lilakreisGradient" x1="120" y1="80" x2="420" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#C4B5FD"/>
+      <stop offset="55%" stop-color="#A78BFA"/>
+      <stop offset="100%" stop-color="#7C5CF6"/>
+    </linearGradient>
+
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Main abstract swirl (implied circle, not closed) -->
+  <path
+    d="M140 300
+       C110 200, 180 120, 270 120
+       C350 120, 395 180, 370 240
+       C345 300, 275 315, 235 345
+       C195 375, 210 415, 265 430"
+    stroke="url(#lilakreisGradient)"
+    stroke-width="36"
+    stroke-linecap="round"
+    fill="none"
+    filter="url(#softGlow)"
+  />
+
+  <!-- Inner counter-motion stroke (language / echo / cry) -->
+  <path
+    d="M215 260
+       C230 215, 290 210, 315 245
+       C340 280, 300 315, 260 305"
+    stroke="#A78BFA"
+    stroke-width="18"
+    stroke-linecap="round"
+    fill="none"
+    opacity="0.85"
+  />
+
+  <!-- Minimal accent dots (voice particles) -->
+  <circle cx="345" cy="150" r="7" fill="#A78BFA" opacity="0.9"/>
+  <circle cx="365" cy="130" r="4" fill="#A78BFA" opacity="0.6"/>
+</svg>

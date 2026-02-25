@@ -10,6 +10,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, JSONResponse
 from app.core.google_oauth import get_google_login_url, exchange_code_for_token, get_user_info
 from app.core.security import create_access_token
+from app.core.config import settings
 from app.services.user_service import create_or_update_user
 
 router = APIRouter(prefix="/google", tags=["auth"])
