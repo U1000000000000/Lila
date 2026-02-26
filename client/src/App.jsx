@@ -22,6 +22,7 @@ import History from "./pages/History";
 import About from "./pages/About";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
+import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 import PageLoader from "./components/ui/PageLoader";
 import "./App.css";
@@ -88,6 +89,9 @@ export default function App() {
 
         {/* Google OAuth drops the user here with ?token=JWT */}
         <Route path="/auth/callback" element={<AuthCallback />} />
+
+        {/* 404 Catch-All */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );
