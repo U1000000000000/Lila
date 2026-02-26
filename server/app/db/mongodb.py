@@ -6,6 +6,7 @@ Usage:
     users = db["users"]
 """
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import ASCENDING, DESCENDING
 from app.core.config import settings
 
 client: AsyncIOMotorClient | None = None
@@ -20,7 +21,12 @@ async def connect_db():
     await db["users"].create_index("google_id", unique=True)
     await db["users"].create_index("email", unique=True)
     await db["memories"].create_index("google_id", unique=True)
-    await db["conversations"].create_index("google_id", unique=True)
+    # Per-session documents: unique on (google_id, session_id); sorted by started_at
+    await db["conversations"].create_index(
+        [("google_id", ASCENDING), ("session_id", ASCENDING)],
+        unique=True,
+    )
+    await db["conversations"].create_index([("google_id", ASCENDING), ("started_at", DESCENDING)])
     print("✅ MongoDB connected and indexes ensured")
 
 async def close_db():

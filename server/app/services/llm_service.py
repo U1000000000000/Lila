@@ -20,7 +20,7 @@ from groq import Groq
 from app.core.config import settings
 from app.services.memory_mongo_service import (
     get_memory_for_user,
-    save_conversation_for_user,
+    save_session_history,
 )
 from app.services.tts_service import send_buffer_to_tts, TTSSession
 
@@ -99,17 +99,28 @@ async def send_llm_response(
     user_input: str,
     websocket,
     conversation_history: list,
+    current_session_history: list,
     tts_ws,
     tts_session: "TTSSession",
     google_id: str = None,
+    session_id: str = None,
+    session_started_at=None,
 ) -> None:
     """
     Generate and stream an LLM response for `user_input`.
     Groq runs in a thread; TTS drains the sentence queue concurrently.
     Supports barge-in cancellation via asyncio.CancelledError.
     tts_session is a per-connection TTSSession (lock + task ref).
+
+    conversation_history  — full sliding-window context fed to the LLM (may
+                            include messages from past sessions loaded on connect).
+    current_session_history — only THIS session's messages; always appended to
+                            in sync with conversation_history so it is immune to
+                            the window-slice that trims conversation_history.
+                            Only this list is persisted to the session document.
     """
     conversation_history.append({"role": "user", "content": user_input})
+    current_session_history.append({"role": "user", "content": user_input})
 
     # Slide the context window — keep only the most recent N messages
     if len(conversation_history) > settings.CONVERSATION_WINDOW:
@@ -155,12 +166,13 @@ async def send_llm_response(
         # Ensure the producer thread has fully exited
         await groq_future
 
-        # Persist assistant turn and save raw conversation to MongoDB
+        # Persist assistant turn and save only this session's history
         conversation_history.append({"role": "assistant", "content": full_response.strip()})
+        current_session_history.append({"role": "assistant", "content": full_response.strip()})
 
-        if google_id:
-            await save_conversation_for_user(google_id, conversation_history)
-            print(f"\n💾 Conversation saved to MongoDB for user {google_id} ({len(conversation_history)} messages)")
+        if google_id and session_id:
+            await save_session_history(google_id, session_id, session_started_at, current_session_history)
+            print(f"\n\U0001f4be Session saved to MongoDB for user {google_id} (session {session_id[:8]}\u2026 | {len(current_session_history)} messages this session)")
         else:
             print("\n❌ Not authenticated: chat not saved")
 

@@ -15,25 +15,25 @@ async def create_or_update_user(
     """
     Upsert a user by their Google sub ID (the canonical unique identifier
     from Google's identity system, not their email which can change).
+    Uses find_one_and_update for atomic upsert and returns the updated/new user.
     """
     db = mongodb.db
-    doc = await db["users"].find_one({"google_id": google_id})
-    if doc:
-        await db["users"].update_one(
-            {"google_id": google_id},
-            {"$set": {"last_login": datetime.utcnow(), "picture": picture, "email": email, "name": name}},
-        )
-        doc = await db["users"].find_one({"google_id": google_id})
-        doc.pop("_id", None)
-        return User(**doc)
-    # Create new user using the real Google sub ID
-    user = User(
-        google_id=google_id,
-        email=email,
-        name=name,
-        picture=picture,
-        created_at=datetime.utcnow(),
-        last_login=datetime.utcnow(),
+    now = datetime.utcnow()
+    doc = await db["users"].find_one_and_update(
+        {"google_id": google_id},
+        {
+            "$set": {
+                "last_login": now,
+                "picture": picture,
+                "email": email,
+                "name": name,
+            },
+            "$setOnInsert": {
+                "created_at": now,
+            },
+        },
+        upsert=True,
+        return_document=True,
     )
-    await db["users"].insert_one(user.model_dump())
-    return user
+    doc.pop("_id", None)
+    return User(**doc)

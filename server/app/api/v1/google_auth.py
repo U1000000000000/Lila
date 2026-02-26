@@ -48,8 +48,8 @@ async def google_callback(request: Request, code: str = None, state: str = None)
         return JSONResponse({"error": "Missing authorization code"}, status_code=400)
 
     # ── Exchange & fetch user info ──────────────────────────────────────────────
-    token_data = exchange_code_for_token(code)
-    user_info = get_user_info(token_data["access_token"])
+    token_data = await exchange_code_for_token(code)
+    user_info = await get_user_info(token_data["access_token"])
 
     # Use the canonical Google subject identifier ("sub") as the unique user key.
     # Email can change; sub is stable and guaranteed unique per Google account.

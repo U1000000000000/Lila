@@ -4,29 +4,24 @@ Auth Routes — /api/v1/auth
 --------------------------
 Placeholder. Will implement login / register / refresh / logout.
 """
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
-from app.core.security import decode_access_token
+from fastapi import APIRouter, Depends
+from app.dependencies.auth import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-def _extract_token(request: Request) -> str | None:
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        return auth_header[7:]
-    return request.cookies.get("jwt_token")
-
 
 @router.get("/me")
-async def get_me(request: Request):
-    token = _extract_token(request)
-    if not token:
-        return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    try:
-        user = decode_access_token(token)
-        return {"user": user}
-    except Exception:
-        return JSONResponse({"error": "Invalid token"}, status_code=401)
+async def get_me(user: dict = Depends(get_current_user)):
+    """
+    Returns the decoded JWT payload for the currently authenticated user.
+
+    This route lives under /api/v1/auth, which is deliberately excluded from
+    AuthMiddleware so the frontend can call it without a chicken-and-egg
+    problem.  Authentication is therefore handled entirely by the
+    get_current_user dependency rather than by middleware.
+    """
+    return {"user": user}
+
 
 from app.api.v1.google_auth import router as google_router
 router.include_router(google_router)

@@ -22,7 +22,9 @@ class Settings:
     MONGODB_DB_NAME: str = os.environ.get("MONGODB_DB_NAME", "appdb")
 
     # ── Auth ───────────────────────────────────────────────────────────────────
-    JWT_SECRET: str = os.environ.get("JWT_SECRET", "change-me-in-production")
+    JWT_SECRET: str = os.environ.get("JWT_SECRET")
+    if not JWT_SECRET:
+        raise RuntimeError("JWT_SECRET environment variable is required and missing. Application will not start.")
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 

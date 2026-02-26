@@ -6,16 +6,18 @@ Orchestrates: STT ↔ LLM ↔ TTS pipeline.
 """
 import asyncio
 import json
+from datetime import datetime, timezone
+from uuid import uuid4
 
 import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.config import settings
-from app.services.memory_mongo_service import get_conversation_for_user
+from app.services.memory_mongo_service import get_recent_conversation_context
 from app.core.security import decode_access_token
-from app.services.stt_service import connect_stt, connect_tts
+from app.services.stt_service import connect_stt
+from app.services.tts_service import connect_tts, TTSSession
 from app.services.llm_service import send_llm_response
-from app.services.tts_service import TTSSession
 
 router = APIRouter()
 
@@ -74,8 +76,15 @@ async def websocket_endpoint(websocket: WebSocket):
     active = await _increment_connections()
     print(f"✅ Client connected (active: {active})")
 
-    # Load raw conversation history from MongoDB for this user
-    conversation_history: list = await get_conversation_for_user(google_id)
+    # Each WebSocket connection is its own session
+    session_id: str = str(uuid4())
+    session_started_at: datetime = datetime.now(timezone.utc)
+
+    # Load recent cross-session context for LLM warm-up (respects CONVERSATION_WINDOW)
+    conversation_history: list = await get_recent_conversation_context(google_id)
+    # Separate list that accumulates ONLY this session's messages for DB persistence
+    current_session_history: list = []
+
     latest_user_input: str = ""
     current_task: asyncio.Task | None = None
     tts_ws = None
@@ -144,9 +153,12 @@ async def websocket_endpoint(websocket: WebSocket):
                                 captured_input,
                                 websocket,
                                 conversation_history,
+                                current_session_history,
                                 tts_ws,
                                 tts_session,
                                 google_id,
+                                session_id,
+                                session_started_at,
                             )
                         )
 

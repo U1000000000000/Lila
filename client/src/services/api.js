@@ -16,13 +16,21 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+async function handleResponse(res) {
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
 export const api = {
   get: async (path) => {
     const res = await fetch(`${BASE_URL}${path}`, {
       credentials: "include",
       headers: { ...authHeaders() },
     });
-    return res.json();
+    return handleResponse(res);
   },
   post: async (path, body) => {
     const res = await fetch(`${BASE_URL}${path}`, {
@@ -31,6 +39,15 @@ export const api = {
       credentials: "include",
       body: JSON.stringify(body),
     });
-    return res.json();
+    return handleResponse(res);
+  },
+  patch: async (path, body) => {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      credentials: "include",
+      body: JSON.stringify(body),
+    });
+    return handleResponse(res);
   },
 };
