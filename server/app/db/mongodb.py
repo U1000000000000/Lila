@@ -20,7 +20,7 @@ async def connect_db():
     # Ensure indexes for production best practices
     await db["users"].create_index("google_id", unique=True)
     await db["users"].create_index("email", unique=True)
-    await db["memories"].create_index("google_id", unique=True)
+    await db["memories"].create_index("google_id")
     # Per-session documents: unique on (google_id, session_id); sorted by started_at
     await db["conversations"].create_index(
         [("google_id", ASCENDING), ("session_id", ASCENDING)],
