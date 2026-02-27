@@ -51,3 +51,27 @@ export const api = {
     return handleResponse(res);
   },
 };
+
+// ── Analysis API ──────────────────────────────────────────────────────────────
+
+/**
+ * Returns aggregated dashboard stats for the authenticated user.
+ * Shape: { total_sessions, total_time_seconds, average_fluency,
+ *          vocabulary_growth, latest_cefr, fluency_history[],
+ *          recent_grammar_errors[], recent_sessions[] }
+ */
+export const fetchDashboard = () => api.get("/analysis/dashboard");
+
+/**
+ * Returns paginated session analysis history.
+ * Shape: { page, size, items: ConversationAnalysis[] }
+ */
+export const fetchHistory = (page = 1, size = 20) =>
+  api.get(`/analysis/history?page=${page}&size=${size}`);
+
+/**
+ * Returns the full analysis for a single session (any status).
+ * Shape: ConversationAnalysis
+ */
+export const fetchSessionAnalysis = (sessionId) =>
+  api.get(`/analysis/session/${sessionId}`);
