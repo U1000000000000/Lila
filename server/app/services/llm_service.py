@@ -24,6 +24,8 @@ from app.services.memory_mongo_service import (
 )
 from app.services.tts_service import send_buffer_to_tts, TTSSession
 
+from app.core.lila_prompt import LILA_SYSTEM_PROMPT
+
 groq_client = Groq()
 
 # Shared thread pool — keeps all blocking Groq calls off the event loop
@@ -38,12 +40,7 @@ _MEMORY_KEYWORDS = [
     "my name", "i said", "we talked", "what did i",
 ]
 
-_SYSTEM_PROMPT_BASE = (
-    "You are a friendly, empathetic AI friend. "
-    "Keep answers SHORT (1-2 sentences max) and natural like texting. "
-    "Be conversational, warm, and real. No formality. "
-    "Respond fast — brevity shows you're engaged."
-)
+
 
 
 def _stream_groq_to_queue(
@@ -62,7 +59,7 @@ def _stream_groq_to_queue(
 
     response = groq_client.chat.completions.create(
         messages=messages,
-        model="llama-3.3-70b-versatile",
+        model="meta-llama/llama-4-scout-17b-16e-instruct",
         temperature=0.8,
         max_tokens=150,
         stream=True,
@@ -127,7 +124,7 @@ async def send_llm_response(
         conversation_history[:] = conversation_history[-settings.CONVERSATION_WINDOW:]
 
     # Build system prompt — inject persistent memory only when user explicitly asks
-    system_prompt = _SYSTEM_PROMPT_BASE
+    system_prompt = LILA_SYSTEM_PROMPT
     needs_memory = any(kw in user_input.lower() for kw in _MEMORY_KEYWORDS)
     if needs_memory and google_id:
         mem = await get_memory_for_user(google_id)

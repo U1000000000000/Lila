@@ -8,6 +8,7 @@ requests           # Google OAuth token exchange / userinfo
 # ── AI Services ───────────────────────────────────────────────────────────────
 groq
 deepgram-sdk       # optional — we use raw WS, but useful for future SDK use
+google-genai         # Gemini — conversation analysis
 
 # ── Database ──────────────────────────────────────────────────────────────────
 motor              # async MongoDB driver (Motor for asyncio)

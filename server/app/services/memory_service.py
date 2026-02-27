@@ -92,7 +92,7 @@ def summarize_conversation_chunk(messages: list) -> str:
         ]
         response = groq_client.chat.completions.create(
             messages=prompt,
-            model="llama-3.3-70b-versatile",
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
             temperature=0.3,
             max_tokens=150,
             stream=False,
@@ -120,7 +120,7 @@ def compress_summaries(old_summaries: list[str]) -> str:
         ]
         response = groq_client.chat.completions.create(
             messages=prompt,
-            model="llama-3.3-70b-versatile",
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
             temperature=0.3,
             max_tokens=200,
             stream=False,

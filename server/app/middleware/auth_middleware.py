@@ -31,6 +31,9 @@ def _extract_token(request: Request) -> str | None:
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # Allow all OPTIONS requests (CORS preflight) through without auth
+        if request.method == "OPTIONS":
+            return await call_next(request)
         # Public routes that don't need authentication
         if (
             request.url.path.startswith("/api/v1/auth")

@@ -16,6 +16,8 @@ class Settings:
     DEEPGRAM_STT_URL: str = os.environ.get("DEEPGRAM_STT_URL", "")
     DEEPGRAM_TTS_URL: str = os.environ.get("DEEPGRAM_TTS_URL", "")
     GROQ_API_KEY: str = os.environ.get("GROQ_API_KEY", "")
+    GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.environ.get("GEMINI_MODEL")
 
     # ── Database ───────────────────────────────────────────────────────────────
     MONGODB_URL: str = os.environ.get("MONGODB_URL", "")
