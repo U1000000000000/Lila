@@ -27,6 +27,13 @@ async def connect_db():
         unique=True,
     )
     await db["conversations"].create_index([("google_id", ASCENDING), ("started_at", DESCENDING)])
+    # Analyses collection — one document per session, fast per-user date-sorted queries
+    await db["analyses"].create_index(
+        [("session_id", ASCENDING)],
+        unique=True,
+    )
+    await db["analyses"].create_index([("google_id", ASCENDING), ("analysed_at", DESCENDING)])
+    await db["analyses"].create_index([("google_id", ASCENDING), ("status", ASCENDING)])
     print("✅ MongoDB connected and indexes ensured")
 
 async def close_db():

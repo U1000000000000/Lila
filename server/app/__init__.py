@@ -8,6 +8,7 @@ from app.api.v1 import ws as ws_routes
 from app.api.v1 import auth as auth_routes
 from app.api.v1 import users as user_routes
 from app.api.v1 import memory as memory_routes
+from app.api.v1 import analysis as analysis_routes
 from app.middleware.auth_middleware import AuthMiddleware
 from app.core.config import settings
 
@@ -27,10 +28,11 @@ app.add_middleware(
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
-app.include_router(ws_routes.router)                          # /ws  (WebSocket)
-app.include_router(auth_routes.router,   prefix="/api/v1")   # /api/v1/auth
-app.include_router(user_routes.router,   prefix="/api/v1")   # /api/v1/users
-app.include_router(memory_routes.router, prefix="/api/v1")   # /api/v1/memory
+app.include_router(ws_routes.router)                            # /ws  (WebSocket)
+app.include_router(auth_routes.router,     prefix="/api/v1")   # /api/v1/auth
+app.include_router(user_routes.router,     prefix="/api/v1")   # /api/v1/users
+app.include_router(memory_routes.router,   prefix="/api/v1")   # /api/v1/memory
+app.include_router(analysis_routes.router, prefix="/api/v1")   # /api/v1/analysis
 
 # ── Middleware ───────────────────────────────────────────────────────────────
 app.add_middleware(AuthMiddleware)

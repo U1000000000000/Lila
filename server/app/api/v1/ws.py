@@ -18,6 +18,7 @@ from app.core.security import decode_access_token
 from app.services.stt_service import connect_stt
 from app.services.tts_service import connect_tts, TTSSession
 from app.services.llm_service import send_llm_response
+from app.services.analysis_service import run_analysis_for_session
 
 router = APIRouter()
 
@@ -204,5 +205,12 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 await tts_ws.close()
             except Exception:
-                pass
+                pass        # Fire-and-forget: analyse the session in the background.
+        # Only trigger if the user actually spoke (session has messages).
+        if google_id and session_id and current_session_history:
+            asyncio.create_task(
+                run_analysis_for_session(google_id, session_id),
+                name=f"analysis-{session_id[:8]}",
+            )
+            print(f"\U0001f50d Analysis task queued for session {session_id[:8]}\u2026")
         print(f"🚪 Session closed (active: {active})")
