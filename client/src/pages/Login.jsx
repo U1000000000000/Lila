@@ -134,9 +134,8 @@ export default function Login() {
                 rel="noopener noreferrer"
                 className="text-white/40 underline underline-offset-2 hover:text-white/70 transition-colors"
               >
-                Privacy Policy
+                Privacy Policy.
               </a>
-              , including the use of your data to improve our AI models.
             </p>
 
             <div className="mt-8 flex items-center justify-center gap-2 text-[#555555] text-[13px] font-medium uppercase tracking-widest">
