@@ -10,12 +10,12 @@
 # def decode_access_token(token: str) -> dict: ...
 
 import jwt
-import os
 from datetime import datetime, timedelta
+from app.core.config import settings
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "change-me-in-production")
-JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+JWT_SECRET = settings.JWT_SECRET
+JWT_ALGORITHM = settings.JWT_ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()

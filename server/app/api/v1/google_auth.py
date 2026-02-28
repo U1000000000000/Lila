@@ -38,14 +38,21 @@ def google_login(request: Request):
 
 
 @router.get("/callback")
-async def google_callback(request: Request, code: str = None, state: str = None):
+async def google_callback(request: Request, code: str = None, state: str = None, error: str = None):
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+    # ── User cancelled / provider returned an error ────────────────────────────
+    if error or not code:
+        response = RedirectResponse(url=f"{frontend_url}/login", status_code=302)
+        response.delete_cookie("oauth_state")
+        return response
+
     # ── CSRF validation ────────────────────────────────────────────────────────
     stored_state = request.cookies.get("oauth_state")
     if not state or not stored_state or not secrets.compare_digest(state, stored_state):
-        return JSONResponse({"error": "Invalid OAuth state — possible CSRF attack"}, status_code=400)
-
-    if not code:
-        return JSONResponse({"error": "Missing authorization code"}, status_code=400)
+        response = RedirectResponse(url=f"{frontend_url}/login", status_code=302)
+        response.delete_cookie("oauth_state")
+        return response
 
     # ── Exchange & fetch user info ──────────────────────────────────────────────
     token_data = await exchange_code_for_token(code)
@@ -68,11 +75,12 @@ async def google_callback(request: Request, code: str = None, state: str = None)
     jwt_token = create_access_token({
         "sub": user.email,
         "name": user.name,
+        "email": user.email,
+        "picture": user.picture,
         "google_id": user.google_id,
     })
 
     # Redirect to frontend; clear the one-time state cookie on the way out
-    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
     redirect_url = f"{frontend_url}/auth/callback?token={jwt_token}"
     response = RedirectResponse(url=redirect_url, status_code=302)
     response.delete_cookie("oauth_state")

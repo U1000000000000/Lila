@@ -15,32 +15,47 @@ export default function Chat() {
   const { isAuthenticated, loading } = useAuth();
 
   const [status, setStatus] = useState("🔴 Not Connected");
-  const [messages, setMessages] = useState([]);
   const [isSessionStarted, setIsSessionStarted] = useState(false);
   const [blobState, setBlobState] = useState("idle");
-  const [isAiThinking, setIsAiThinking] = useState(false);
+  const [aiCaption, setAiCaption] = useState("");
 
   const lastUserSpeechTime = useRef(0);
-  const { audioRef, push: pushAudio } = useAudioQueue();
+  // Holds the transcript text until audio actually starts playing
+  const pendingCaptionRef = useRef("");
+
+  const handleAudioPlay = useCallback(() => {
+    // Flush the pending caption exactly when speech begins
+    if (pendingCaptionRef.current) {
+      setAiCaption(pendingCaptionRef.current);
+      pendingCaptionRef.current = "";
+    }
+  }, []);
+
+  const handleAudioEnd = useCallback(() => {
+    // Clear caption exactly when audio finishes — perfect sync
+    setAiCaption("");
+  }, []);
+
+  const { audioRef, push: pushAudio } = useAudioQueue({
+    onPlay: handleAudioPlay,
+    onEnd: handleAudioEnd,
+  });
 
   const handleAudio = useCallback(
     (url) => {
       lastUserSpeechTime.current = Date.now();
-      setIsAiThinking(false);
       pushAudio(url);
     },
     [pushAudio],
   );
 
   const handleTranscript = useCallback((text) => {
-    setIsAiThinking(false);
-    setMessages((prev) => [...prev, { role: "ai", text }]);
+    // Don't show caption yet — wait for audio to start playing
+    pendingCaptionRef.current = text;
   }, []);
 
   const handleUserTranscript = useCallback((text) => {
     if (!text.trim()) return;
-    setMessages((prev) => [...prev, { role: "user", text }]);
-    setIsAiThinking(true); // user spoke → AI is now thinking
   }, []);
 
   useWebSocket({
@@ -55,7 +70,6 @@ export default function Chat() {
       const sLower = s.toLowerCase();
       if (sLower.includes("speak")) {
         setBlobState("speaking");
-        setIsAiThinking(false);
       } else if (
         sLower.includes("process") ||
         sLower.includes("handl") ||
@@ -63,7 +77,6 @@ export default function Chat() {
         sLower.includes("comput")
       ) {
         setBlobState("computing");
-        setIsAiThinking(true);
       } else {
         setBlobState("listening");
       }
@@ -78,15 +91,14 @@ export default function Chat() {
 
   const handleStartSession = useCallback(() => {
     setIsSessionStarted(true);
-    setMessages([]);
-    setIsAiThinking(false);
+    setAiCaption("");
     setBlobState("listening");
   }, []);
 
   const handleStopSession = useCallback(() => {
     setIsSessionStarted(false);
-    setIsAiThinking(false);
     setBlobState("idle");
+    setAiCaption("");
   }, []);
 
   const navigate = useNavigate();
@@ -146,7 +158,7 @@ export default function Chat() {
               <Logo className="w-8 h-8" glow />
             </motion.div>
             <span className="text-white/90 text-[20px] font-medium tracking-wide">
-              Lila
+              LilaKreis
             </span>
           </div>
 
@@ -171,13 +183,11 @@ export default function Chat() {
           </div>
         </header>
 
-        {/* 6. Transcript */}
+        {/* 6. Live Caption */}
         <TranscriptOverlay
-          messages={messages}
+          aiCaption={aiCaption}
           isSessionStarted={isSessionStarted}
-          status={status}
           blobState={blobState}
-          isAiThinking={isAiThinking}
         />
 
         {/* 7. Control Deck */}

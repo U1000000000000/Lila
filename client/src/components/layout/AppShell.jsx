@@ -10,6 +10,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
+import { LogOut } from "lucide-react";
 import Logo from "../ui/Logo";
 import Footer from "../ui/Footer";
 import { cn } from "../../utils/cn";
@@ -60,7 +61,7 @@ export default function AppShell({
       <header className="absolute inset-x-0 top-0 z-30 h-24 pointer-events-none">
         {/* Left: Logo */}
         <div
-          className="absolute top-8 left-8 md:top-12 md:left-12 flex items-center gap-3 select-none cursor-pointer pointer-events-auto opacity-90 hover:opacity-100 transition-opacity"
+          className="absolute top-8 left-8 md:top-12 md:left-12 hidden md:flex items-center gap-3 select-none cursor-pointer pointer-events-auto opacity-90 hover:opacity-100 transition-opacity"
           onClick={() => {
             if (sessionStorage.getItem("jwt_token")) {
               navigate("/chat");
@@ -71,7 +72,7 @@ export default function AppShell({
         >
           <Logo className="w-8 h-8" glow />
           <span className="text-white/90 text-[20px] font-medium tracking-wide">
-            Lila
+            LilaKreis
           </span>
         </div>
 
@@ -102,9 +103,13 @@ export default function AppShell({
               logout();
               navigate("/login");
             }}
-            className="absolute top-8 right-8 md:top-12 md:right-12 pointer-events-auto px-4 py-1.5 rounded-full text-[13px] font-medium text-white/40 hover:text-white/80 border border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.04] transition-all duration-200 backdrop-blur-md"
+            className="absolute top-8 right-8 md:top-12 md:right-12 pointer-events-auto hidden md:flex items-center gap-1.5 px-2 md:px-4 py-1.5 rounded-full text-[13px] font-medium text-white/40 hover:text-white/80 border border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.04] transition-all duration-200 backdrop-blur-md"
           >
-            Log out
+            <LogOut
+              className="w-[13px] h-[13px] flex-shrink-0"
+              strokeWidth={2}
+            />
+            <span className="hidden md:inline">Log out</span>
           </button>
         )}
       </header>

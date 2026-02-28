@@ -5,9 +5,10 @@ Exposes conversation analysis data to the authenticated frontend.
 
 Endpoints
 ─────────
-GET  /analysis/dashboard            → aggregated stats for Dashboard.jsx
-GET  /analysis/history?page=&size=  → paginated list of analyses for History.jsx
-GET  /analysis/session/{session_id} → full analysis for a specific session
+GET  /analysis/dashboard                 → aggregated stats for Dashboard.jsx
+GET  /analysis/history?page=&size=       → paginated list of analyses for History.jsx
+GET  /analysis/session/{session_id}      → full analysis for a specific session
+GET  /analysis/conversation/{session_id} → raw chat history for chat popup
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -17,6 +18,7 @@ from app.services.analysis_service import (
     get_analyses_for_user,
     get_analysis_for_session,
 )
+import app.db.mongodb as mongodb
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -25,7 +27,7 @@ router = APIRouter(prefix="/analysis", tags=["analysis"])
 async def dashboard(google_id: str = Depends(get_current_google_id)):
     """
     Returns aggregated statistics across all completed analyses.
-    Used by Dashboard.jsx to populate stats cards, fluency chart, 
+    Used by Dashboard.jsx to populate stats cards, fluency chart,
     recent sessions sidebar, and grammar errors panel.
     """
     return await get_dashboard_stats(google_id)
@@ -57,8 +59,6 @@ async def session_detail(
 ):
     """
     Returns the full analysis for a specific session.
-    Includes status="pending" or status="failed" so the frontend
-    can render appropriate loading/error states.
     """
     analysis = await get_analysis_for_session(google_id, session_id)
     if not analysis:
@@ -67,3 +67,31 @@ async def session_detail(
             detail="Analysis not found for this session",
         )
     return analysis.model_dump()
+
+
+@router.get("/conversation/{session_id}")
+async def conversation_history(
+    session_id: str,
+    google_id: str = Depends(get_current_google_id),
+):
+    """
+    Returns the raw chat history for a specific session from the
+    conversations collection. Used by History.jsx chat popup.
+    Shape: { session_id, messages: [{role, content}] }
+    """
+    db = mongodb.db
+    doc = await db["conversations"].find_one(
+        {"google_id": google_id, "session_id": session_id},
+        {"history": 1, "_id": 0},
+    )
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+    messages = [
+        {"role": m.get("role", "assistant"), "content": m.get("content", "").strip()}
+        for m in doc.get("history", [])
+        if m.get("content", "").strip()
+    ]
+    return {"session_id": session_id, "messages": messages}
