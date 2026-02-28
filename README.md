@@ -146,4 +146,6 @@ Lila was built by:
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+Copyright (c) 2026 Piyush Soni and Ujjval Agarwal. All rights reserved.
+
+This software is proprietary and confidential. No part of this codebase may be used, copied, modified, distributed, or sublicensed without the express written permission of the authors. See [LICENSE](LICENSE) for full terms.

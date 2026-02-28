@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import json
 import asyncio
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from google import genai
@@ -293,7 +294,7 @@ async def get_dashboard_stats(google_id: str) -> dict:
         {"$match": {"google_id": google_id, "status": "done"}},
         {"$sort": {"analysed_at": -1}},
         {"$facet": {
-            # Overall aggregates
+            # Overall aggregates (cumulative numbers only)
             "totals": [
                 {"$group": {
                     "_id": None,
@@ -303,20 +304,46 @@ async def get_dashboard_stats(google_id: str) -> dict:
                     "vocab_items": {"$push": "$vocabulary_highlights"},
                 }},
             ],
-            # Latest CEFR level
+            # Latest scored session — all insight fields come from here
+            "latest_session": [
+                {"$match": {"fluency_score": {"$gt": 0}, "cefr_level": {"$nin": ["", None]}}},
+                {"$limit": 1},
+                {"$project": {
+                    "_id": 0,
+                    "cefr_level": 1,
+                    "fluency_score": 1,
+                    "strengths": 1,
+                    "areas_for_improvement": 1,
+                    "grammar_errors": 1,
+                    "vocabulary_highlights": 1,
+                    "topics": 1,
+                    "session_title": 1,
+                    "session_summary": 1,
+                }},
+            ],
+            # Latest CEFR level — skip unscored sessions (too short to assess)
             "latest_cefr": [
+                {"$match": {"cefr_level": {"$nin": ["", None]}, "fluency_score": {"$gt": 0}}},
                 {"$limit": 1},
                 {"$project": {"cefr_level": 1}},
             ],
-            # Fluency history for chart (last 30 sessions, oldest→newest)
+            # Fluency history for chart (last 30 scored sessions, oldest→newest)
             "fluency_history": [
+                {"$match": {"fluency_score": {"$gt": 0}}},
                 {"$limit": 30},
                 {"$sort": {"analysed_at": 1}},
                 {"$project": {"fluency_score": 1}},
             ],
-            # 5 most recent grammar errors across latest 10 sessions
+            # CEFR history for chart (last 30 sessions, oldest→newest)
+            "cefr_history": [
+                {"$limit": 30},
+                {"$sort": {"analysed_at": 1}},
+                {"$project": {"cefr_level": 1}},
+            ],
+            # Grammar errors from latest scored session only
             "recent_grammar": [
-                {"$limit": 10},
+                {"$match": {"fluency_score": {"$gt": 0}}},
+                {"$limit": 1},
                 {"$unwind": "$grammar_errors"},
                 {"$limit": 5},
                 {"$project": {
@@ -340,6 +367,25 @@ async def get_dashboard_stats(google_id: str) -> dict:
                     "analysed_at": 1,
                 }},
             ],
+            # Best fluency score
+            "best_fluency": [
+                {"$sort": {"fluency_score": -1}},
+                {"$limit": 1},
+                {"$project": {"fluency_score": 1}},
+            ],
+            # Streak days (consecutive days with a session)
+            "streak_days": [
+                {"$group": {
+                    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$analysed_at"}},
+                    "count": {"$sum": 1}
+                }},
+                {"$sort": {"_id": -1}},
+                {"$group": {
+                    "_id": None,
+                    "dates": {"$push": "$_id"}
+                }},
+                {"$project": {"_id": 0, "dates": 1}}
+            ]
         }},
     ]
 
@@ -354,6 +400,28 @@ async def get_dashboard_stats(google_id: str) -> dict:
     raw_vocab = totals.get("vocab_items", [])
     all_vocab = {word for sublist in raw_vocab for word in sublist}
 
+    # Get latest scored session insight fields
+    latest = (facet.get("latest_session") or [{}])[0]
+
+    # Topics from latest session as frequency list (count=1 each, ordered)
+    latest_topics = [{"topic": t, "count": 1} for t in latest.get("topics", [])]
+
+    # Calculate streak days
+    streak_days = 0
+    if facet.get("streak_days") and facet["streak_days"][0].get("dates"):
+        sorted_dates = sorted(facet["streak_days"][0]["dates"], reverse=True)
+        if sorted_dates:
+            today = datetime.now(timezone.utc).date()
+            current_date = today
+            for date_str in sorted_dates:
+                session_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                if session_date == current_date:
+                    streak_days += 1
+                    current_date -= timedelta(days=1)
+                elif session_date < current_date:
+                    # If there's a gap, the streak is broken
+                    break
+    
     return {
         "total_sessions": totals.get("total_sessions", 0),
         "total_time_seconds": totals.get("total_time_seconds", 0),
@@ -362,6 +430,9 @@ async def get_dashboard_stats(google_id: str) -> dict:
         "latest_cefr": (facet.get("latest_cefr") or [{}])[0].get("cefr_level") or "N/A",
         "fluency_history": [
             s.get("fluency_score", 0) for s in facet.get("fluency_history", [])
+        ],
+        "cefr_history": [
+            s.get("cefr_level", "") for s in facet.get("cefr_history", [])
         ],
         "recent_grammar_errors": [
             {
@@ -372,6 +443,12 @@ async def get_dashboard_stats(google_id: str) -> dict:
             for g in facet.get("recent_grammar", [])
         ],
         "recent_sessions": facet.get("recent_sessions", []),
+        "strengths": latest.get("strengths", []),
+        "areas_for_improvement": latest.get("areas_for_improvement", []),
+        "vocabulary_highlights": latest.get("vocabulary_highlights", []),
+        "topics_frequency": latest_topics,
+        "best_fluency": (facet.get("best_fluency") or [{}])[0].get("fluency_score", 0),
+        "streak_days": streak_days,
     }
 
 
@@ -383,6 +460,13 @@ def _empty_dashboard() -> dict:
         "vocabulary_growth": 0,
         "latest_cefr": "",
         "fluency_history": [],
+        "cefr_history": [],
         "recent_grammar_errors": [],
         "recent_sessions": [],
+        "strengths": [],
+        "areas_for_improvement": [],
+        "vocabulary_highlights": [],
+        "topics_frequency": [],
+        "best_fluency": 0,
+        "streak_days": 0,
     }

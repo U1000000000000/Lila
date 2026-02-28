@@ -75,3 +75,11 @@ export const fetchHistory = (page = 1, size = 20) =>
  */
 export const fetchSessionAnalysis = (sessionId) =>
   api.get(`/analysis/session/${sessionId}`);
+
+/**
+ * Returns the raw chat history for a specific session.
+ * Shape: { session_id, messages: [{role, content}] }
+ */
+export const fetchConversation = (sessionId) =>
+  api.get(`/analysis/conversation/${sessionId}`);
+

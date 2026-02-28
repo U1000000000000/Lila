@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   UserCircle,
@@ -6,9 +7,11 @@ import {
   SlidersHorizontal,
   ChevronDown,
   Check,
+  LogOut,
 } from "lucide-react";
 import AppShell from "../components/layout/AppShell";
 import { cn } from "../utils/cn";
+import { useAuth } from "../hooks/useAuth";
 
 const LANGUAGES = [
   "English (US)",
@@ -94,6 +97,8 @@ const SectionHeader = ({ icon: Icon, title }) => (
 );
 
 export default function Settings() {
+  const navigate = useNavigate();
+  const { logout, user } = useAuth();
   const DEFAULTS = {
     displayName: "Elena Richardson",
     email: "elena.r@example.com",
@@ -104,9 +109,7 @@ export default function Settings() {
   };
   const [saved, setSaved] = useState(DEFAULTS);
 
-  // Live editable state
-  const [displayName, setDisplayName] = useState(saved.displayName);
-  const [email, setEmail] = useState(saved.email);
+  // Live editable state (name + email are read-only — managed by Google)
   const [language, setLanguage] = useState(saved.language);
   const [autoDetect, setAutoDetect] = useState(saved.autoDetect);
   const [correction, setCorrection] = useState(saved.correction);
@@ -114,16 +117,12 @@ export default function Settings() {
 
   // Show action bar only when something changed
   const isDirty =
-    displayName !== saved.displayName ||
-    email !== saved.email ||
     language !== saved.language ||
     autoDetect !== saved.autoDetect ||
     correction !== saved.correction ||
     reminders !== saved.reminders;
 
   const handleDiscard = () => {
-    setDisplayName(saved.displayName);
-    setEmail(saved.email);
     setLanguage(saved.language);
     setAutoDetect(saved.autoDetect);
     setCorrection(saved.correction);
@@ -131,14 +130,7 @@ export default function Settings() {
   };
 
   const handleSave = () => {
-    setSaved({
-      displayName,
-      email,
-      language,
-      autoDetect,
-      correction,
-      reminders,
-    });
+    setSaved({ language, autoDetect, correction, reminders });
   };
 
   return (
@@ -157,26 +149,60 @@ export default function Settings() {
         {/* ── Account ───────────────────────────────────── */}
         <motion.section {...fadeUp(0.05)} className="mb-8">
           <SectionHeader icon={UserCircle} title="Account" />
-          <div className="grid grid-cols-2 gap-4 mb-4">
+
+          {/* Read-only Google account info */}
+          <div className="rounded-[12px] bg-white/[0.03] border border-white/[0.07] px-4 py-4 mb-4 flex items-center gap-3">
+            {/* Avatar: Google picture or initial fallback */}
+            <div className="w-10 h-10 rounded-full overflow-hidden bg-[#A78BFA]/20 border border-[#A78BFA]/30 flex items-center justify-center flex-shrink-0">
+              {user?.picture ? (
+                <img
+                  src={user.picture}
+                  alt={user.name}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <span className="text-[13px] font-bold text-[#A78BFA]">
+                  {(user?.name?.[0] ?? "?").toUpperCase()}
+                </span>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[14px] font-medium text-white/90 truncate">
+                {user?.name ?? "—"}
+              </p>
+              <p className="text-[12px] text-white/35 truncate">
+                {user?.email ?? "—"}
+              </p>
+            </div>
+            {/* Google badge */}
+            <span className="flex-shrink-0 text-[10px] font-medium text-white/25 border border-white/[0.07] rounded-full px-2 py-0.5">
+              Google
+            </span>
+          </div>
+
+          <p className="text-[11px] text-white/25 mb-4">
+            Your name and email are managed by Google and cannot be changed
+            here.
+          </p>
+
+          {/* Read-only labeled fields */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div>
               <label className="text-[11px] text-white/35 mb-1.5 block">
                 Display Name
               </label>
-              <input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-[10px] bg-white/[0.04] border border-white/[0.08] text-[13px] text-white/80 focus:outline-none focus:border-[#A78BFA]/50 transition-colors"
-              />
+              <div className="w-full px-4 py-2.5 rounded-[10px] bg-white/[0.02] border border-white/[0.05] text-[13px] text-white/50 cursor-not-allowed select-none truncate">
+                {user?.name ?? "—"}
+              </div>
             </div>
             <div>
               <label className="text-[11px] text-white/35 mb-1.5 block">
                 Email Address
               </label>
-              <input
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-[10px] bg-white/[0.04] border border-white/[0.08] text-[13px] text-white/50 focus:outline-none focus:border-[#A78BFA]/50 transition-colors"
-              />
+              <div className="w-full px-4 py-2.5 rounded-[10px] bg-white/[0.02] border border-white/[0.05] text-[13px] text-white/50 cursor-not-allowed select-none truncate">
+                {user?.email ?? "—"}
+              </div>
             </div>
           </div>
           <div>
@@ -263,6 +289,19 @@ export default function Settings() {
             ))}
           </div>
         </motion.section>
+        {/* ── Mobile-only Log out ─────────────────────────── */}
+        <motion.div {...fadeUp(0.2)} className="md:hidden mt-8">
+          <button
+            onClick={() => {
+              logout();
+              navigate("/login");
+            }}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-[12px] bg-red-500/[0.08] border border-red-500/[0.2] text-red-400/80 hover:bg-red-500/[0.14] hover:text-red-400 transition-all duration-200 text-[13px] font-medium"
+          >
+            <LogOut className="w-4 h-4" strokeWidth={2} />
+            Log out
+          </button>
+        </motion.div>
       </div>
 
       {/* ── Sticky action bar — only visible when there are unsaved changes ── */}

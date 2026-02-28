@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Mic, Brain, Zap, Play } from "lucide-react";
+import { Mic, Brain, Zap } from "lucide-react";
 import AppShell from "../components/layout/AppShell";
 
 const fadeUp = (delay = 0) => ({
@@ -140,7 +140,7 @@ export default function About() {
       <section id="voice" className="max-w-[680px] mx-auto px-8 py-12 w-full">
         <motion.div {...fadeUp(0)}>
           <SectionTag>The Voice</SectionTag>
-          <div className="rounded-[16px] bg-white/[0.03] border border-white/[0.07] p-6 flex items-start justify-between gap-6">
+          <div className="rounded-[16px] bg-white/[0.03] border border-white/[0.07] p-6">
             <div className="flex-1">
               <h3 className="text-[18px] font-semibold text-white mb-3">
                 Calm, Patient, Adaptive.
@@ -153,14 +153,6 @@ export default function About() {
                 improvement becomes measurable without ever disrupting flow.
               </p>
             </div>
-            <motion.button
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.97 }}
-              className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full bg-[#A78BFA]/[0.12] border border-[#A78BFA]/[0.25] text-[#A78BFA] text-[12px] font-medium hover:bg-[#A78BFA]/[0.2] transition-all mt-1"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              Hear Sample
-            </motion.button>
           </div>
         </motion.div>
       </section>

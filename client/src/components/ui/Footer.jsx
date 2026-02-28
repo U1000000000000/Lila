@@ -16,11 +16,11 @@ export default function Footer() {
   ];
 
   return (
-    <footer className="w-full border-t border-white/[0.05] px-8 py-4 flex items-center justify-between">
-      <span className="text-[11px] text-white/20 tracking-wide select-none">
-        © 2026 Lila AI. All rights reserved.
+    <footer className="w-full border-t border-white/[0.05] px-6 sm:px-8 py-5 sm:py-4 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0">
+      <span className="text-[11px] text-white/20 tracking-wide select-none text-center sm:text-left">
+        © 2026 LilaKreis. All rights reserved.
       </span>
-      <div className="flex items-center gap-5">
+      <div className="flex items-center gap-4 sm:gap-5 flex-wrap justify-center">
         {links.map(({ label, to, external }) =>
           external ? (
             <a

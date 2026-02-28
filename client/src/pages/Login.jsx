@@ -53,7 +53,7 @@ export default function Login() {
       >
         <Logo className="w-8 h-8" glow />
         <span className="text-white/90 text-[20px] font-medium tracking-wide">
-          Lila
+          LilaKreis
         </span>
       </div>
 
@@ -76,7 +76,7 @@ export default function Login() {
             </div>
 
             <h1 className="text-[28px] md:text-[32px] font-semibold tracking-tight text-white/95 mb-3 leading-tight">
-              Access Lila
+              Access LilaKreis
             </h1>
             <p className="text-[#8A8A8A] text-[15px] mb-10 leading-relaxed max-w-[280px]">
               Sign in or create an account to begin your language journey.
@@ -115,6 +115,29 @@ export default function Login() {
               </svg>
               <span className="relative z-10">Continue with Google</span>
             </button>
+
+            {/* Consent notice */}
+            <p className="mt-4 text-[11px] text-white/25 text-center leading-relaxed px-2">
+              By continuing, you agree to LilaKreis&apos;s{" "}
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-white/40 underline underline-offset-2 hover:text-white/70 transition-colors"
+              >
+                Terms of Service
+              </a>{" "}
+              and{" "}
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-white/40 underline underline-offset-2 hover:text-white/70 transition-colors"
+              >
+                Privacy Policy
+              </a>
+              , including the use of your data to improve our AI models.
+            </p>
 
             <div className="mt-8 flex items-center justify-center gap-2 text-[#555555] text-[13px] font-medium uppercase tracking-widest">
               <div className="w-8 h-[1px] bg-gradient-to-r from-transparent to-[#333]"></div>

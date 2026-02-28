@@ -206,7 +206,7 @@ export default function Landing() {
             glow
           />
           <span className="text-white/90 text-[20px] font-medium tracking-wide">
-            Lila
+            LilaKreis
           </span>
         </div>
         <div className="pointer-events-auto">
@@ -226,7 +226,7 @@ export default function Landing() {
           >
             <span className="w-1.5 h-1.5 rounded-full bg-[#A78BFA]" />
             <span className="text-[11px] font-medium text-white/60 tracking-widest uppercase">
-              Lila Neural Engine
+              LilaKreis Neural Engine
             </span>
           </motion.div>
 
