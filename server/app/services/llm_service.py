@@ -10,18 +10,21 @@ Performance architecture:
   - Sentences are pushed onto an asyncio.Queue the moment they complete.
   - A concurrent TTS consumer drains that queue immediately.
   - Effect: TTS starts on sentence 1 while the LLM generates sentence 2.
+
+Memory architecture:
+  - conversation_history contains ONLY the current session's messages (RAM).
+  - Tier 3 imprints (points) are ALWAYS injected into the system prompt.
+  - Tier 2 memory is injected ONLY when keyword triggers are detected.
+  - No DB writes happen here — Tier 1 is saved once at session end by ws.py.
 """
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
+from typing import List
 
 from groq import Groq
 
-from app.core.config import settings
-from app.services.memory_mongo_service import (
-    get_memory_for_user,
-    save_session_history,
-)
+from app.services.memory_mongo_service import get_all_memories_text
 from app.services.tts_service import send_buffer_to_tts, TTSSession
 
 from app.core.lila_prompt import LILA_SYSTEM_PROMPT
@@ -39,9 +42,6 @@ _MEMORY_KEYWORDS = [
     "said", "mentioned", "what do you know", "recall",
     "my name", "i said", "we talked", "what did i",
 ]
-
-
-
 
 def _stream_groq_to_queue(
     messages: list,
@@ -100,8 +100,7 @@ async def send_llm_response(
     tts_ws,
     tts_session: "TTSSession",
     google_id: str = None,
-    session_id: str = None,
-    session_started_at=None,
+    user_imprints: List[dict] | None = None,
 ) -> None:
     """
     Generate and stream an LLM response for `user_input`.
@@ -109,33 +108,45 @@ async def send_llm_response(
     Supports barge-in cancellation via asyncio.CancelledError.
     tts_session is a per-connection TTSSession (lock + task ref).
 
-    conversation_history  — full sliding-window context fed to the LLM (may
-                            include messages from past sessions loaded on connect).
-    current_session_history — only THIS session's messages; always appended to
-                            in sync with conversation_history so it is immune to
-                            the window-slice that trims conversation_history.
-                            Only this list is persisted to the session document.
+    conversation_history    — full current-session messages fed to the LLM.
+                              Starts empty each session; never trimmed — Lila
+                              always receives the complete current session.
+    current_session_history — identical content; kept as a separate list so
+                              DB persistence at session end is decoupled from
+                              the LLM context list.
+    user_imprints           — Tier 3 points loaded at session start, always
+                              injected into the system prompt.
     """
     conversation_history.append({"role": "user", "content": user_input})
     current_session_history.append({"role": "user", "content": user_input})
+    # No trim — Lila always receives the full current-session history.
+    # Llama 4 Scout has a 10M token context window; a single voice session
+    # will never approach that limit.
 
-    # Slide the context window — keep only the most recent N messages
-    if len(conversation_history) > settings.CONVERSATION_WINDOW:
-        conversation_history[:] = conversation_history[-settings.CONVERSATION_WINDOW:]
-
-    # Build system prompt — inject persistent memory only when user explicitly asks
+    # ── Build system prompt ───────────────────────────────────────────────────
     system_prompt = LILA_SYSTEM_PROMPT
+
+    # Tier 3: ALWAYS inject imprints (points) if they exist
+    if user_imprints:
+        points_text = "\n".join(
+            f"- {p.get('type', '')} {p.get('point', '')}"
+            for p in user_imprints
+        )
+        system_prompt += (
+            "\n\n[What you know about this person — treat as implicit "
+            "background, do not reference directly unless it naturally "
+            "comes up]:\n" + points_text
+        )
+
+    # Tier 2: inject memory ONLY when the user's words trigger recall
     needs_memory = any(kw in user_input.lower() for kw in _MEMORY_KEYWORDS)
     if needs_memory and google_id:
-        mem = await get_memory_for_user(google_id)
-        if mem:
-            if mem.long_term_summary:
-                system_prompt += f"\n\n[Long-term memory]: {mem.long_term_summary}"
-            if mem.recent_summaries:
-                recent = "; ".join(
-                    s.text for s in mem.recent_summaries[-3:]
-                )
-                system_prompt += f"\n\n[Recent context]: {recent}"
+        memories_text = await get_all_memories_text(google_id)
+        if memories_text:
+            system_prompt += (
+                f"\n\n[Your memory of past conversations]:\n"
+                f"{memories_text}"
+            )
 
     messages = [{"role": "system", "content": system_prompt}] + conversation_history
     sentence_queue: asyncio.Queue = asyncio.Queue()
@@ -163,15 +174,10 @@ async def send_llm_response(
         # Ensure the producer thread has fully exited
         await groq_future
 
-        # Persist assistant turn and save only this session's history
+        # Append assistant turn to both history lists (RAM only — no DB write)
         conversation_history.append({"role": "assistant", "content": full_response.strip()})
         current_session_history.append({"role": "assistant", "content": full_response.strip()})
-
-        if google_id and session_id:
-            await save_session_history(google_id, session_id, session_started_at, current_session_history)
-            print(f"\n\U0001f4be Session saved to MongoDB for user {google_id} (session {session_id[:8]}\u2026 | {len(current_session_history)} messages this session)")
-        else:
-            print("\n❌ Not authenticated: chat not saved")
+        print(f"\n💬 Turn complete ({len(current_session_history)} messages this session)")
 
     except asyncio.CancelledError:
         print("\n🛑 LLM response cancelled (barge-in)")

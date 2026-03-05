@@ -40,9 +40,9 @@ class Settings:
     GOOGLE_REDIRECT_URI: str = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/v1/auth/google/callback")
     
     # ── Memory / Conversation ──────────────────────────────────────────────────
-    CONVERSATION_WINDOW: int = 15    # sliding window — last N messages kept hot
-    SAVE_INTERVAL: int = 5           # persist to DB every N messages
-    MEMORY_FILE: str = str(Path(__file__).parent.parent.parent / "memory.json")  # local fallback
+    # No per-session window cap — Lila always receives the full current session.
+    TIER2_MAX_TOKENS: int = 250      # approximate ceiling for memory prose
+    TIER3_MAX_POINTS: int = 20       # max imprints per user
 
 
 settings = Settings()

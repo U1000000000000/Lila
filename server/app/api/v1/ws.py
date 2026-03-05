@@ -3,6 +3,14 @@ WebSocket Route — /ws
 ----------------------
 Single persistent connection per user session.
 Orchestrates: STT ↔ LLM ↔ TTS pipeline.
+
+Memory architecture:
+  - Current session messages live in RAM only (conversation_history,
+    current_session_history).
+  - Tier 3 imprints are loaded once at session start and passed to every
+    LLM call.
+  - On disconnect, Tier 1 is saved to DB, then the full post-session
+    pipeline fires (analysis → Tier 2 → Tier 3).
 """
 import asyncio
 import json
@@ -13,12 +21,15 @@ import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.config import settings
-from app.services.memory_mongo_service import get_recent_conversation_context
+from app.services.memory_mongo_service import (
+    get_imprints_for_user,
+    save_session_history,
+)
 from app.core.security import decode_access_token
 from app.services.stt_service import connect_stt
 from app.services.tts_service import connect_tts, TTSSession
 from app.services.llm_service import send_llm_response
-from app.services.analysis_service import run_analysis_for_session
+from app.services.memory_pipeline_service import run_post_session_pipeline
 
 router = APIRouter()
 
@@ -63,7 +74,8 @@ async def websocket_endpoint(websocket: WebSocket):
         google_id = user.get("google_id")
         if not google_id:
             raise Exception("No google_id in token")
-    except Exception:
+    except Exception as auth_err:
+        print(f"🔐 Auth failed: {auth_err}")
         await websocket.send_text(json.dumps({"error": "Invalid or missing authentication"}))
         await websocket.close()
         return
@@ -81,10 +93,22 @@ async def websocket_endpoint(websocket: WebSocket):
     session_id: str = str(uuid4())
     session_started_at: datetime = datetime.now(timezone.utc)
 
-    # Load recent cross-session context for LLM warm-up (respects CONVERSATION_WINDOW)
-    conversation_history: list = await get_recent_conversation_context(google_id)
-    # Separate list that accumulates ONLY this session's messages for DB persistence
-    current_session_history: list = []
+    # ── Memory architecture: current session only, no past sessions ───────────
+    conversation_history: list = []            # fed to LLM — current session only
+    current_session_history: list = []         # mirror for DB persistence at end
+
+    # Tier 3 — load imprints once, inject into every LLM call
+    user_imprints: list = []
+    try:
+        imprints_doc = await get_imprints_for_user(google_id)
+        user_imprints = [
+            p.model_dump() if hasattr(p, "model_dump") else p
+            for p in imprints_doc.points
+        ]
+        if user_imprints:
+            print(f"📌 Loaded {len(user_imprints)} imprints for user {google_id}")
+    except Exception as e:
+        print(f"⚠️  Failed to load imprints: {e}")
 
     latest_user_input: str = ""
     current_task: asyncio.Task | None = None
@@ -158,8 +182,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 tts_ws,
                                 tts_session,
                                 google_id,
-                                session_id,
-                                session_started_at,
+                                user_imprints,
                             )
                         )
 
@@ -205,12 +228,36 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 await tts_ws.close()
             except Exception:
-                pass        # Fire-and-forget: analyse the session in the background.
+                pass
+
+        # ── Post-session pipeline ─────────────────────────────────────────────
         # Only trigger if the user actually spoke (session has messages).
         if google_id and session_id and current_session_history:
+            # Step 1: Save Tier 1 to DB — MUST complete before pipeline reads it
+            try:
+                await save_session_history(
+                    google_id,
+                    session_id,
+                    session_started_at,
+                    current_session_history,
+                )
+                print(
+                    f"💾 Tier 1 saved to MongoDB for user {google_id} "
+                    f"(session {session_id[:8]}… | {len(current_session_history)} messages)"
+                )
+            except Exception as e:
+                print(f"❌ Tier 1 save failed: {e}")
+
+            # Steps 2-4: Analysis → Tier 2 → Tier 3 (fire-and-forget)
             asyncio.create_task(
-                run_analysis_for_session(google_id, session_id),
-                name=f"analysis-{session_id[:8]}",
+                run_post_session_pipeline(
+                    google_id,
+                    session_id,
+                    current_session_history,
+                    session_started_at,
+                ),
+                name=f"pipeline-{session_id[:8]}",
             )
-            print(f"\U0001f50d Analysis task queued for session {session_id[:8]}\u2026")
+            print(f"🧠 Post-session pipeline queued for session {session_id[:8]}…")
+
         print(f"🚪 Session closed (active: {active})")

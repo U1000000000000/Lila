@@ -20,7 +20,12 @@ async def connect_db():
     # Ensure indexes for production best practices
     await db["users"].create_index("google_id", unique=True)
     await db["users"].create_index("email", unique=True)
-    await db["memories"].create_index("google_id", unique=True)
+    # Memories collection — Tier 2 per-session summaries
+    await db["memories"].create_index(
+        [("google_id", ASCENDING), ("session_id", ASCENDING)],
+        unique=True,
+    )
+    await db["memories"].create_index([("google_id", ASCENDING), ("created_at", DESCENDING)])
     # Per-session documents: unique on (google_id, session_id); sorted by started_at
     await db["conversations"].create_index(
         [("google_id", ASCENDING), ("session_id", ASCENDING)],
@@ -34,6 +39,8 @@ async def connect_db():
     )
     await db["analyses"].create_index([("google_id", ASCENDING), ("analysed_at", DESCENDING)])
     await db["analyses"].create_index([("google_id", ASCENDING), ("status", ASCENDING)])
+    # Imprints collection — Tier 3 stable facts, one doc per user
+    await db["imprints"].create_index("google_id", unique=True)
     print("✅ MongoDB connected and indexes ensured")
 
 async def close_db():
