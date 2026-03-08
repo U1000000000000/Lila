@@ -1,14 +1,3 @@
-# JWT helpers, password hashing – placeholder until auth is built
-# from passlib.context import CryptContext
-# from jose import jwt
-
-# pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# def hash_password(password: str) -> str: ...
-# def verify_password(plain: str, hashed: str) -> bool: ...
-# def create_access_token(data: dict) -> str: ...
-# def decode_access_token(token: str) -> dict: ...
-
 import jwt
 from datetime import datetime, timedelta
 from app.core.config import settings

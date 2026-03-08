@@ -1,0 +1,39 @@
+# ── Python runtime ────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg
+*.egg-info/
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env_dir/
+
+# ── Build / distribution ──────────────────────────────────────────────────────
+dist/
+build/
+*.spec
+
+# ── Environment Variables ──────────────────────────────────────────────────────
+# .env.example IS committed — all other env files are not
+.env
+.env.local
+.env.*.local
+
+# ── Testing / tooling ──────────────────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── Data / runtime artifacts ───────────────────────────────────────────────────
+memory.json
+*.log
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

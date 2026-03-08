@@ -3,9 +3,16 @@ import { useCallback, useEffect, useRef } from "react";
 /**
  * Manages a sequential audio playback queue.
  *
+ * All audio URLs pushed here are assumed valid and large enough to play —
+ * the size check is done upstream (in useWebSocket) before the URL is created.
+ *
+ * Critically, event handlers are attached BEFORE audio.src is set so there is
+ * no window where `onended` could fire without a handler registered, which
+ * would leave isPlayingRef stuck as `true` and freeze the queue.
+ *
  * @param {{ onPlay, onEnd }} options
  *   onPlay() — called the moment each audio clip starts playing
- *   onEnd()  — called the moment each audio clip finishes (or errors/skips)
+ *   onEnd()  — called the moment each audio clip finishes (or errors)
  * @returns {{ audioRef, push }}
  */
 export function useAudioQueue({ onPlay, onEnd } = {}) {
@@ -30,45 +37,34 @@ export function useAudioQueue({ onPlay, onEnd } = {}) {
       return;
     }
 
-    const MIN_AUDIO_SIZE = 1000;
+    // ── Handlers BEFORE src ──────────────────────────────────────────────────
+    // Setting audio.src starts the browser's decode pipeline immediately for
+    // blob: URLs (in-memory). If onended were attached after src, a very short
+    // clip could finish decoding + playing before the handler was registered,
+    // leaving isPlayingRef permanently true and freezing the queue.
+    audio.onended = () => {
+      URL.revokeObjectURL(nextUrl);
+      isPlayingRef.current = false;
+      onEndRef.current?.();
+      playNextRef.current?.();
+    };
+    audio.onerror = () => {
+      console.error("[AudioQueue] Playback error");
+      URL.revokeObjectURL(nextUrl);
+      isPlayingRef.current = false;
+      onEndRef.current?.();
+      playNextRef.current?.();
+    };
 
-    fetch(nextUrl)
-      .then(res => res.blob())
-      .then(blob => {
-        if (blob.size < MIN_AUDIO_SIZE) {
-          console.warn("[AudioQueue] Skipping tiny blob (", blob.size, "bytes)");
-          URL.revokeObjectURL(nextUrl);
-          isPlayingRef.current = false;
-          onEndRef.current?.();
-          playNextRef.current?.();
-          return;
-        }
-        audio.src = nextUrl;
-        audio.onended = () => {
-          URL.revokeObjectURL(nextUrl);
-          isPlayingRef.current = false;
-          onEndRef.current?.();   // ← caption hides here
-          playNextRef.current?.();
-        };
-        audio.onerror = () => {
-          console.error("[AudioQueue] Playback error");
-          URL.revokeObjectURL(nextUrl);
-          isPlayingRef.current = false;
-          onEndRef.current?.();
-          playNextRef.current?.();
-        };
-        audio.play()
-          .then(() => {
-            onPlayRef.current?.();  // ← caption shows here
-          })
-          .catch(() => {
-            URL.revokeObjectURL(nextUrl);
-            isPlayingRef.current = false;
-            onEndRef.current?.();
-            playNextRef.current?.();
-          });
+    // ── Src after handlers ───────────────────────────────────────────────────
+    audio.src = nextUrl;
+
+    audio.play()
+      .then(() => {
+        onPlayRef.current?.();
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("[AudioQueue] play() rejected:", err);
         URL.revokeObjectURL(nextUrl);
         isPlayingRef.current = false;
         onEndRef.current?.();

@@ -1,20 +1,24 @@
 /**
  * API Service — centralised REST client.
- * Wraps fetch with JWT auth header injection and base URL resolution.
+ *
+ * Auth strategy: HttpOnly cookie only.
+ * The JWT is stored in an HttpOnly cookie set by the server after OAuth.
+ * JS never reads or sends the token — `credentials: "include"` tells the
+ * browser to attach the cookie automatically on every request.
+ * No Authorization header is used or needed.
  *
  * Usage:
  *   import { api } from "./api";
- *   const user = await api.get("/users/me");
+ *   const user = await api.get("/auth/me");
  */
 
-// Base URL draws from environment variable in production, but uses Vite Proxy (/api/v1) in local dev.
-const BASE_URL = import.meta.env.VITE_API_URL || "/api/v1";
-
-/** Read JWT from sessionStorage and return as Authorization header. */
-function authHeaders() {
-  const token = sessionStorage.getItem("jwt_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
+// In dev, always use relative URL so requests go through the Vite proxy.
+// The proxy forwards them to the FastAPI backend, and the browser stores
+// HttpOnly cookies for localhost:5173 — the correct origin for every
+// subsequent proxied request.
+// In production (same origin): relative URL still works.
+// In production (cross-origin API): set VITE_API_BASE_URL=https://api.example.com/api/v1
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
 async function handleResponse(res) {
   if (!res.ok) {
@@ -24,27 +28,43 @@ async function handleResponse(res) {
   return res.json();
 }
 
+/**
+ * Wrap fetch with an AbortController timeout.
+ * If the server does not respond within `timeoutMs`, the request is aborted
+ * and an AbortError is thrown — the UI can then surface a meaningful error
+ * state instead of hanging the tab indefinitely.
+ * Default: 15 s (generous for auth calls, tight enough to catch hangs).
+ */
+function fetchWithTimeout(url, options, timeoutMs = 15_000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() =>
+    clearTimeout(id)
+  );
+}
+
 export const api = {
   get: async (path) => {
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetchWithTimeout(`${BASE_URL}${path}`, {
+      // credentials: "include" sends the HttpOnly jwt_token cookie automatically.
+      // Never add an Authorization header here — the token is HttpOnly.
       credentials: "include",
-      headers: { ...authHeaders() },
     });
     return handleResponse(res);
   },
   post: async (path, body) => {
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetchWithTimeout(`${BASE_URL}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
+      headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify(body),
     });
     return handleResponse(res);
   },
   patch: async (path, body) => {
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetchWithTimeout(`${BASE_URL}${path}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
+      headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify(body),
     });

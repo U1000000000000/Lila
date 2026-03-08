@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef } from "react";
 import { convertPCMToWav } from "../utils/audio";
 
-// Derive WS URL from the current page origin so the Vite proxy handles it.
-// Append the JWT token as a query param so the backend can auth WS connections
-// (browsers can't set custom headers on WebSocket connections).
+// Always derive the WS URL from the current page origin so the Vite proxy
+// handles it in dev (ws://localhost:5173/ws → ws://localhost:8000/ws).
+// HttpOnly cookies are sent automatically on WebSocket handshakes — no token
+// in the URL needed.
+// In production, set VITE_WS_BASE_URL=wss://api.example.com if cross-origin.
 function getWsUrl() {
-  const token = sessionStorage.getItem("jwt_token");
-  const base =
-    import.meta.env.VITE_WS_URL ||
-    (window.location.protocol === 'https:' ? 'wss' : 'ws') +
-      '://' + window.location.host + '/ws';
-  return token ? `${base}?token=${token}` : base;
+  const override = import.meta.env.VITE_WS_BASE_URL;
+  if (override) return override;
+  const proto = window.location.protocol === "https:" ? "wss" : "ws";
+  return `${proto}://${window.location.host}/ws`;
 }
 const SAMPLE_RATE = 24000;
 
@@ -91,12 +91,22 @@ export function useWebSocket({ onStatus, onTranscript, onUserTranscript, onAudio
         }, 100);
       };
 
+      // Minimum PCM payload that represents real speech.
+      // Deepgram occasionally flushes a tiny trailing frame — skip it so the
+      // audio queue never receives a near-silent clip that would advance the
+      // caption queue without playing audible speech.
+      const MIN_AUDIO_BYTES = 1000;
+
       ws.onmessage = async (message) => {
         // Binary → PCM audio from TTS
         if (message.data instanceof Blob && message.data.size > 0) {
           const buf = await message.data.arrayBuffer();
           const wavBlob = convertPCMToWav(buf, SAMPLE_RATE);
-          if (wavBlob) callbacksRef.current.onAudio(URL.createObjectURL(wavBlob));
+          if (wavBlob && wavBlob.size >= MIN_AUDIO_BYTES) {
+            callbacksRef.current.onAudio(URL.createObjectURL(wavBlob));
+          } else if (wavBlob) {
+            console.warn("[WS] Skipping tiny audio blob (", wavBlob.size, "bytes)");
+          }
           return;
         }
 

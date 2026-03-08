@@ -45,15 +45,27 @@ from app.services.memory_mongo_service import (
 from app.services.analysis_service import run_analysis_for_session
 
 
-# ── Gemini client (lazy singleton) ────────────────────────────────────────────
+# ── Gemini client ─────────────────────────────────────────────────────────────
+# Double-checked locking with a threading.Lock ensures thread-safe lazy
+# initialisation.  asyncio.Lock cannot be used here because _get_client() is
+# called from inside run_in_executor threads, not from the event loop.
+import threading as _threading
 
 _GENAI_CLIENT: genai.Client | None = None
+_GENAI_CLIENT_LOCK = _threading.Lock()
 
 
 def _get_client() -> genai.Client:
+    """Return the Gemini client, initialising it exactly once (thread-safe)."""
     global _GENAI_CLIENT
-    if _GENAI_CLIENT is None:
-        _GENAI_CLIENT = genai.Client(api_key=settings.GEMINI_API_KEY)
+    # Fast path — no lock needed once the client exists.
+    if _GENAI_CLIENT is not None:
+        return _GENAI_CLIENT
+    # Slow path — acquire the lock and check again inside (double-checked locking).
+    # This prevents two threads that both saw None from each creating a client.
+    with _GENAI_CLIENT_LOCK:
+        if _GENAI_CLIENT is None:
+            _GENAI_CLIENT = genai.Client(api_key=settings.GEMINI_API_KEY)
     return _GENAI_CLIENT
 
 

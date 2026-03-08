@@ -1,4 +1,4 @@
-# Logs
+# ── Logs ──────────────────────────────────────────────────────────────────────
 logs
 *.log
 npm-debug.log*
@@ -7,16 +7,25 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# ── Build outputs ─────────────────────────────────────────────────────────────
 node_modules
 dist
 dist-ssr
-*.local
 
-# Editor directories and files
+# ── Environment Variables ──────────────────────────────────────────────────────
+# Local overrides — never commit
+.env.local
+.env.*.local
+# Base .env (may contain secrets)
+.env
+# .env.production is intentionally committed (non-secret deployment config)
+
+# ── Editor / OS ───────────────────────────────────────────────────────────────
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj

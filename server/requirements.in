@@ -1,0 +1,29 @@
+# requirements.in — HUMAN-MAINTAINED abstract dependencies.
+#
+# This is the equivalent of package.json in Node.js.
+# List only DIRECT dependencies here, without version pins.
+# Run `pip-compile --generate-hashes requirements.in` to regenerate
+# requirements.txt (the lock file) with all transitive deps pinned + hashed.
+#
+# To upgrade a package:
+#   pip-compile --upgrade-package <name> --generate-hashes requirements.in
+# To upgrade everything:
+#   pip-compile --upgrade --generate-hashes requirements.in
+
+# ── Core ──────────────────────────────────────────────────────────────────────
+fastapi
+uvicorn[standard]
+websockets
+python-dotenv
+requests
+httpx
+
+# ── AI Services ───────────────────────────────────────────────────────────────
+groq
+google-genai
+
+# ── Database ──────────────────────────────────────────────────────────────────
+motor
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+PyJWT

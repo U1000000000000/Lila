@@ -2,6 +2,7 @@
 FastAPI application factory.
 Registers all routers and middleware here.
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import ws as ws_routes
@@ -11,11 +12,24 @@ from app.api.v1 import memory as memory_routes
 from app.api.v1 import analysis as analysis_routes
 from app.middleware.auth_middleware import AuthMiddleware
 from app.core.config import settings
+from app.db.mongodb import connect_db, close_db
+
+
+# ── Lifecycle ─────────────────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("🚀 Server starting up...")
+    await connect_db()
+    yield
+    print("💾 Server shutting down — saving state...")
+    await close_db()
+
 
 app = FastAPI(
     title="AI Voice Companion",
     description="Voice-first AI companion backend",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
@@ -36,19 +50,3 @@ app.include_router(analysis_routes.router, prefix="/api/v1")   # /api/v1/analysi
 
 # ── Middleware ───────────────────────────────────────────────────────────────
 app.add_middleware(AuthMiddleware)
-
-# ── Lifecycle ─────────────────────────────────────────────────────────────────
-
-from app.db.mongodb import connect_db, close_db
-
-@app.on_event("startup")
-async def startup_event():
-    print("🚀 Server starting up...")
-    await connect_db()
-
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    print("💾 Server shutting down — saving state...")
-    await close_db()

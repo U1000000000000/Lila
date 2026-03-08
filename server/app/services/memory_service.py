@@ -51,30 +51,6 @@ def _get_user_state(google_id: str) -> UserMemoryState:
         return _user_memory_store[google_id]
 
 
-# ── Disk I/O (local fallback – will be replaced by MongoDB) ───────────────────
-def load_memory() -> list:
-    """Load conversation history from disk (local fallback)."""
-    try:
-        import os
-        if not os.path.exists(settings.MEMORY_FILE) or os.path.getsize(settings.MEMORY_FILE) == 0:
-            return []
-        with open(settings.MEMORY_FILE, "r") as f:
-            data = json.load(f)
-        return data[-settings.CONVERSATION_WINDOW:] if isinstance(data, list) else []
-    except Exception as e:
-        print(f"❌ Memory load error: {e}")
-        return []
-
-
-def save_memory(data: list) -> None:
-    """Persist conversation history to disk (local fallback)."""
-    try:
-        with open(settings.MEMORY_FILE, "w") as f:
-            json.dump(data, f, indent=2)
-    except Exception as e:
-        print(f"❌ Memory save error: {e}")
-
-
 # ── Summarization ─────────────────────────────────────────────────────────────
 def summarize_conversation_chunk(messages: list) -> str:
     """Summarise a chunk of old messages into a short paragraph of key facts."""
@@ -92,7 +68,7 @@ def summarize_conversation_chunk(messages: list) -> str:
         ]
         response = groq_client.chat.completions.create(
             messages=prompt,
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model="llama-3.3-70b-versatile",
             temperature=0.3,
             max_tokens=150,
             stream=False,
@@ -120,7 +96,7 @@ def compress_summaries(old_summaries: list[str]) -> str:
         ]
         response = groq_client.chat.completions.create(
             messages=prompt,
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model="llama-3.3-70b-versatile",
             temperature=0.3,
             max_tokens=200,
             stream=False,

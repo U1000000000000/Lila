@@ -15,7 +15,6 @@ import Landing from "./pages/Landing";
 import Chat from "./pages/Chat";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
-import Register from "./pages/Register";
 import Settings from "./pages/Settings";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
@@ -82,7 +81,6 @@ export default function App() {
 
         {/* Public Routes */}
         <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
         <Route path="/about" element={<About />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />

@@ -18,8 +18,12 @@ export default function Login() {
   }, [loading, isAuthenticated, navigate]);
 
   const handleGoogleLogin = () => {
-    // Relative URL — goes through Vite proxy to the backend
-    window.location.href = "/api/v1/auth/google/login";
+    // Navigate DIRECTLY to the backend OAuth endpoint — bypasses the Vite proxy.
+    // This is critical: Google will redirect back to localhost:8000, so the
+    // oauth_state cookie must be set by localhost:8000 directly (not via proxy)
+    // so the browser sends it back to localhost:8000 without any port confusion.
+    const backendOrigin = import.meta.env.VITE_BACKEND_ORIGIN || "http://localhost:8000";
+    window.location.href = `${backendOrigin}/api/v1/auth/google/login`;
   };
 
   if (loading) {

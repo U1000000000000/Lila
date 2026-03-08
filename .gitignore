@@ -1,21 +1,41 @@
-# Python
+# ── Python ────────────────────────────────────────────────────────────────────
 .venv/
 venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.pyd
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
 memory.json
 
-# Node
+# ── Node ──────────────────────────────────────────────────────────────────────
 client/node_modules/
 client/dist/
+client/dist-ssr/
 
-# Env
+# ── Environment Variables ──────────────────────────────────────────────────────
+# Root
 .env
-client/.env
-server/.env
+.env.local
 
-# Misc
+# Client — never commit local overrides; .env.production (non-secret) IS committed
+client/.env
+client/.env.local
+client/.env.*.local
+
+# Server — never commit secrets; .env.example IS committed
+server/.env
+server/.env.local
+server/.env.*.local
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
 .DS_Store
+Thumbs.db
 *.log
+*.swp
+*.swo

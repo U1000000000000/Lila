@@ -18,21 +18,26 @@ export default function Chat() {
   const [isSessionStarted, setIsSessionStarted] = useState(false);
   const [blobState, setBlobState] = useState("idle");
   const [aiCaption, setAiCaption] = useState("");
+  // What the user said, as heard by Deepgram STT.
+  // Cleared automatically after 4 s so it doesn't linger on screen.
+  const [userCaption, setUserCaption] = useState("");
+  const userCaptionTimerRef = useRef(null);
 
   const lastUserSpeechTime = useRef(0);
-  // Holds the transcript text until audio actually starts playing
-  const pendingCaptionRef = useRef("");
+  // Caption queue — one entry per audio chunk, in arrival order.
+  // The server sends {"response": sentence} THEN the binary audio for that
+  // sentence, so the queue order always matches the audio chunk order.
+  const captionQueueRef = useRef([]);
 
   const handleAudioPlay = useCallback(() => {
-    // Flush the pending caption exactly when speech begins
-    if (pendingCaptionRef.current) {
-      setAiCaption(pendingCaptionRef.current);
-      pendingCaptionRef.current = "";
-    }
+    // Dequeue the caption that belongs to this audio chunk and show it.
+    const caption = captionQueueRef.current.shift() ?? "";
+    setAiCaption(caption);
   }, []);
 
   const handleAudioEnd = useCallback(() => {
-    // Clear caption exactly when audio finishes — perfect sync
+    // Clear caption when this chunk finishes.
+    // If another chunk is already queued, onPlay will immediately set the next one.
     setAiCaption("");
   }, []);
 
@@ -50,12 +55,19 @@ export default function Chat() {
   );
 
   const handleTranscript = useCallback((text) => {
-    // Don't show caption yet — wait for audio to start playing
-    pendingCaptionRef.current = text;
+    // Enqueue — the audio chunk for this sentence is coming right after.
+    // onPlay will dequeue exactly this caption when that chunk starts.
+    captionQueueRef.current.push(text);
   }, []);
 
   const handleUserTranscript = useCallback((text) => {
     if (!text.trim()) return;
+    // Show what Lila heard the user say, then auto-clear after 4 s.
+    // This closes the feedback loop: users know exactly what STT picked up
+    // and can self-correct if the transcription was wrong.
+    setUserCaption(text.trim());
+    if (userCaptionTimerRef.current) clearTimeout(userCaptionTimerRef.current);
+    userCaptionTimerRef.current = setTimeout(() => setUserCaption(""), 4000);
   }, []);
 
   useWebSocket({
@@ -92,6 +104,7 @@ export default function Chat() {
   const handleStartSession = useCallback(() => {
     setIsSessionStarted(true);
     setAiCaption("");
+    captionQueueRef.current = [];
     setBlobState("listening");
   }, []);
 
@@ -99,6 +112,9 @@ export default function Chat() {
     setIsSessionStarted(false);
     setBlobState("idle");
     setAiCaption("");
+    setUserCaption("");
+    captionQueueRef.current = [];
+    if (userCaptionTimerRef.current) clearTimeout(userCaptionTimerRef.current);
   }, []);
 
   const navigate = useNavigate();
@@ -182,6 +198,24 @@ export default function Chat() {
             </button>
           </div>
         </header>
+
+        {/* 5b. User speech caption — shows what STT heard the user say.
+               Appears above the AI caption so both can coexist briefly.
+               Auto-clears after 4 s (driven by the timer in handleUserTranscript). */}
+        {isSessionStarted && userCaption && (
+          <motion.div
+            key={userCaption}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="absolute bottom-[140px] left-1/2 -translate-x-1/2 z-20 pointer-events-none w-full max-w-[480px] px-8 flex justify-center"
+          >
+            <p className="text-center text-white/40 text-[13px] font-light leading-relaxed tracking-wide italic">
+              {userCaption}
+            </p>
+          </motion.div>
+        )}
 
         {/* 6. Live Caption */}
         <TranscriptOverlay

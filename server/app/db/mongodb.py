@@ -38,7 +38,16 @@ async def connect_db():
         unique=True,
     )
     await db["analyses"].create_index([("google_id", ASCENDING), ("analysed_at", DESCENDING)])
-    await db["analyses"].create_index([("google_id", ASCENDING), ("status", ASCENDING)])
+    # Compound index covering google_id + status + analysed_at in a single scan.
+    # The previous separate (google_id, status) index has been superseded by this
+    # one: MongoDB can use a compound index to satisfy prefix queries, so this
+    # single index covers (google_id), (google_id+status), and all three fields.
+    # The dashboard query filters status="completed" and sorts by analysed_at,
+    # so this compound index resolves it without a collection scan.
+    await db["analyses"].create_index(
+        [("google_id", ASCENDING), ("status", ASCENDING), ("analysed_at", DESCENDING)],
+        name="analyses_user_status_date",
+    )
     # Imprints collection — Tier 3 stable facts, one doc per user
     await db["imprints"].create_index("google_id", unique=True)
     print("✅ MongoDB connected and indexes ensured")

@@ -38,13 +38,6 @@ _active_connections: int = 0
 _connections_lock: asyncio.Lock = asyncio.Lock()
 
 
-async def _increment_connections() -> int:
-    global _active_connections
-    async with _connections_lock:
-        _active_connections += 1
-        return _active_connections
-
-
 async def _decrement_connections() -> int:
     global _active_connections
     async with _connections_lock:
@@ -58,13 +51,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
     await websocket.accept()
 
-    # Accept token from query param (?token=JWT) or cookie.
-    # Browsers can't set custom headers on WebSocket connections, so we use
-    # the query param approach when cookies aren't available cross-origin.
-    token = (
-        websocket.query_params.get("token")
-        or websocket.cookies.get("jwt_token")
-    )
+    # Browsers automatically send HttpOnly cookies with WebSocket handshakes
+    # (same as HTTP requests) — no query param needed or accepted.
+    # Reading from the cookie only keeps the JWT out of URLs, server logs,
+    # and JS memory entirely.
+    token = websocket.cookies.get("jwt_token")
     if not token:
         await websocket.send_text(json.dumps({"error": "Not authenticated"}))
         await websocket.close()
@@ -80,13 +71,16 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close()
         return
 
+    # Check and increment are a single atomic operation inside one lock
+    # acquisition — no other coroutine can slip between the guard and the
+    # increment and push the count past the ceiling.
     async with _connections_lock:
         if _active_connections >= settings.MAX_CONCURRENT_CONNECTIONS:
             await websocket.send_text(json.dumps({"error": "Too many connections. Please wait."}))
             await websocket.close()
             return
-
-    active = await _increment_connections()
+        _active_connections += 1
+        active = _active_connections
     print(f"✅ Client connected (active: {active})")
 
     # Each WebSocket connection is its own session
@@ -127,16 +121,31 @@ async def websocket_endpoint(websocket: WebSocket):
             return
 
         # ── Inner coroutines ──────────────────────────────────────────────────
+        # Hard cap on inbound binary frames.  A malicious client sending
+        # arbitrarily large audio blobs would exhaust server memory without
+        # this guard.  Browser MediaRecorder chunks at 100 ms intervals are
+        # typically 2-8 KB; 1 MB is many orders of magnitude above any
+        # legitimate frame and safely catches abuse or misconfiguration.
+        _MAX_AUDIO_BYTES = 1 * 1024 * 1024  # 1 MB
+
         async def receive_audio():
             """Forward raw audio bytes from browser → Deepgram STT."""
             try:
                 async for message in websocket.iter_bytes():
-                    if message:
-                        await deepgram_ws.send(message)
+                    if not message:
+                        continue
+                    if len(message) > _MAX_AUDIO_BYTES:
+                        print(
+                            f"\u26a0\ufe0f  Oversized audio frame ({len(message):,} bytes) "
+                            f"from {google_id} \u2014 closing connection (1009)"
+                        )
+                        await websocket.close(code=1009)  # RFC 6455: Message Too Big
+                        return
+                    await deepgram_ws.send(message)
             except websockets.exceptions.ConnectionClosed:
-                print("🚪 Frontend closed audio stream")
+                print("\U0001f6aa Frontend closed audio stream")
             except Exception as e:
-                print(f"❌ Audio receive error: {e}")
+                print(f"\u274c Audio receive error: {e}")
 
         async def process_transcription():
             """Read STT results and trigger LLM responses."""

@@ -60,49 +60,65 @@ async def send_buffer_to_tts(text: str, websocket, tts_ws, session: TTSSession) 
     await websocket.send_text(json.dumps({"response": text + " "}))
 
     async with session.lock:
-        try:
-            session.current_task = asyncio.current_task()
-
-            await tts_ws.send(json.dumps({"type": "Speak", "text": text}))
-            await tts_ws.send(json.dumps({"type": "Flush"}))
-
-            audio_buffer = bytearray()
-            timeout_count = 0
-            max_timeouts = 5  # 5 × 0.2 s = 1 s total silence before giving up
-
-            while timeout_count < max_timeouts:
-                try:
-                    chunk = await asyncio.wait_for(tts_ws.recv(), timeout=0.2)
-                    timeout_count = 0
-                    if isinstance(chunk, bytes):
-                        audio_buffer.extend(chunk)
-                    elif isinstance(chunk, str):
-                        msg = json.loads(chunk)
-                        if msg.get("type") == "Flushed":
-                            print(f"✅ TTS audio complete: {len(audio_buffer)} bytes")
-                            break
-                except asyncio.TimeoutError:
-                    timeout_count += 1
-                    if audio_buffer and timeout_count >= 2:
-                        break  # have audio and silence — done
-
-            if audio_buffer:
-                print(f"🔊 Sending {len(audio_buffer)} bytes → frontend")
-                await websocket.send_bytes(bytes(audio_buffer))
-            else:
-                print("⚠️ No audio received from TTS")
-
-        except asyncio.CancelledError:
-            print("🛑 TTS cancelled (user interrupted)")
+        for attempt in range(2):
             try:
-                await tts_ws.send(json.dumps({"type": "Clear"}))
-            except Exception:
-                pass
-            raise
+                session.current_task = asyncio.current_task()
 
-        except Exception as e:
-            print(f"❌ TTS error: {e}")
+                await tts_ws.send(json.dumps({"type": "Speak", "text": text}))
+                await tts_ws.send(json.dumps({"type": "Flush"}))
 
-        finally:
-            if session.current_task == asyncio.current_task():
-                session.current_task = None
+                audio_buffer = bytearray()
+                timeout_count = 0
+                max_timeouts = 5  # 5 × 0.2 s = 1 s total silence before giving up
+
+                while timeout_count < max_timeouts:
+                    try:
+                        chunk = await asyncio.wait_for(tts_ws.recv(), timeout=0.2)
+                        timeout_count = 0
+                        if isinstance(chunk, bytes):
+                            audio_buffer.extend(chunk)
+                        elif isinstance(chunk, str):
+                            msg = json.loads(chunk)
+                            if msg.get("type") == "Flushed":
+                                print(f"✅ TTS audio complete: {len(audio_buffer)} bytes")
+                                break
+                    except asyncio.TimeoutError:
+                        timeout_count += 1
+                        if audio_buffer and timeout_count >= 2:
+                            break  # have audio and silence — done
+
+                if audio_buffer:
+                    print(f"🔊 Sending {len(audio_buffer)} bytes → frontend")
+                    await websocket.send_bytes(bytes(audio_buffer))
+                else:
+                    print("⚠️ No audio received from TTS")
+                break  # Success, exit retry loop
+
+            except asyncio.CancelledError:
+                print("🛑 TTS cancelled (user interrupted)")
+                try:
+                    await tts_ws.send(json.dumps({"type": "Clear"}))
+                except Exception:
+                    pass
+                raise
+
+            except (websockets.exceptions.ConnectionClosed, OSError) as e:
+                print(f"❌ TTS connection closed: {e}")
+                if attempt == 0:
+                    # Try to reconnect and retry once
+                    try:
+                        tts_ws = await connect_tts()
+                        print("🔄 TTS WebSocket reconnected, retrying...")
+                        continue
+                    except Exception as conn_err:
+                        print(f"❌ TTS reconnection failed: {conn_err}")
+                print("⚠️ TTS reconnection failed or already retried, giving up.")
+                break
+
+            except Exception as e:
+                print(f"❌ TTS error: {e}")
+                break
+
+            finally:
+                if session.current_task == asyncio.current_task():
+                    session.current_task = None

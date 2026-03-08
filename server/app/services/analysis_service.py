@@ -34,12 +34,17 @@ import app.db.mongodb as mongodb
 from app.core.config import settings
 from app.models.analysis import ConversationAnalysis, GrammarCorrection
 
-# ── Gemini client (lazy singleton — created on first call so the API key
-#    is guaranteed to be loaded from .env by then) ────────────────────────────
+# ── Gemini client ─────────────────────────────────────────────────────────────
+# Double-checked locking with a threading.Lock ensures thread-safe lazy
+# initialisation.  asyncio.Lock cannot be used here because _get_client() is
+# called from inside run_in_executor threads, not from the event loop.
+import threading as _threading
+
 _GENAI_CLIENT: genai.Client | None = None
+_GENAI_CLIENT_LOCK = _threading.Lock()
 
 _GEMINI_CONFIG = genai_types.GenerateContentConfig(
-    temperature=1.0,          
+    temperature=1.0,
     response_mime_type="application/json",
     thinking_config=genai_types.ThinkingConfig(
         thinking_budget=2048
@@ -48,10 +53,16 @@ _GEMINI_CONFIG = genai_types.GenerateContentConfig(
 
 
 def _get_client() -> genai.Client:
-    """Return (and lazily create) the Gemini client."""
+    """Return the Gemini client, initialising it exactly once (thread-safe)."""
     global _GENAI_CLIENT
-    if _GENAI_CLIENT is None:
-        _GENAI_CLIENT = genai.Client(api_key=settings.GEMINI_API_KEY)
+    # Fast path — no lock needed once the client exists.
+    if _GENAI_CLIENT is not None:
+        return _GENAI_CLIENT
+    # Slow path — acquire the lock and check again inside (double-checked locking).
+    # This prevents two threads that both saw None from each creating a client.
+    with _GENAI_CLIENT_LOCK:
+        if _GENAI_CLIENT is None:
+            _GENAI_CLIENT = genai.Client(api_key=settings.GEMINI_API_KEY)
     return _GENAI_CLIENT
 
 

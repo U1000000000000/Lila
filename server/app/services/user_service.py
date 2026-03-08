@@ -3,7 +3,7 @@ User service for MongoDB operations (Google OAuth only).
 """
 import app.db.mongodb as mongodb
 from app.models.user import User
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 async def create_or_update_user(
@@ -18,7 +18,7 @@ async def create_or_update_user(
     Uses find_one_and_update for atomic upsert and returns the updated/new user.
     """
     db = mongodb.db
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     doc = await db["users"].find_one_and_update(
         {"google_id": google_id},
         {

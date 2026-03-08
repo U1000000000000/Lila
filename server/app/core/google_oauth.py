@@ -2,16 +2,15 @@
 Google OAuth2 utility for FastAPI.
 Handles login URL generation, callback, token exchange, and JWT issuance.
 """
-import os
-import requests
 import httpx
 from urllib.parse import urlencode
 from fastapi import HTTPException
 from app.core.config import settings
 
-# In production, ensure these are loaded via .environ.get("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+# All OAuth credentials are read from `settings`, which loads them from .env
+# via load_dotenv() before this module is ever imported.  Reading them at the
+# call site (via settings.*) avoids the import-time race where os.environ.get()
+# would return None if .env had not yet been loaded.
 GOOGLE_REDIRECT_URI = settings.GOOGLE_REDIRECT_URI
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -22,13 +21,8 @@ SCOPES = ["openid", "email", "profile"]
 
 
 def get_google_login_url(state: str) -> str:
-    if not GOOGLE_CLIENT_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Google OAuth is not configured. Missing GOOGLE_CLIENT_ID.",
-        )
     params = {
-        "client_id": GOOGLE_CLIENT_ID,
+        "client_id": settings.GOOGLE_CLIENT_ID,
         "redirect_uri": GOOGLE_REDIRECT_URI,
         "response_type": "code",
         "scope": " ".join(SCOPES),
@@ -42,20 +36,22 @@ def get_google_login_url(state: str) -> str:
 async def exchange_code_for_token(code: str) -> dict:
     data = {
         "code": code,
-        "client_id": GOOGLE_CLIENT_ID,
-        "client_secret": GOOGLE_CLIENT_SECRET,
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "client_secret": settings.GOOGLE_CLIENT_SECRET,
         "redirect_uri": GOOGLE_REDIRECT_URI,
         "grant_type": "authorization_code",
     }
-    masked_data = data.copy()
-    masked_data["client_secret"] = f"{GOOGLE_CLIENT_SECRET[:10]}...{GOOGLE_CLIENT_SECRET[-4:]}" if GOOGLE_CLIENT_SECRET else "MISSING"
-    print(f"Exchanging code with payload: {masked_data}")
     async with httpx.AsyncClient() as client:
         resp = await client.post(GOOGLE_TOKEN_URL, data=data)
     if resp.status_code != 200:
-        error_msg = f"Failed to exchange code for token. Google response: {resp.text}"
-        print(f"OAuth Error: {error_msg}")
-        raise HTTPException(status_code=400, detail=error_msg)
+        # Log the raw Google response server-side only — it may echo back
+        # request parameters including the client_secret.  Never surface it
+        # to the caller.
+        print(f"OAuth token exchange failed (HTTP {resp.status_code}): {resp.text}")
+        raise HTTPException(
+            status_code=400,
+            detail="OAuth token exchange failed. Please try signing in again.",
+        )
     return resp.json()
 
 
