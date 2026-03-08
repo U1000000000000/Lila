@@ -50,12 +50,17 @@ async def exchange_auth_code(request: Request, response: Response):
     if time.time() > expires_at:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Auth code expired")
 
-    _secure = settings.FRONTEND_URL.startswith("https://")
+    _is_prod = settings.FRONTEND_URL.startswith("https://")
+    _secure = _is_prod
+    # SameSite=None is required when the frontend and backend are on different
+    # origins (e.g. Vercel + Zeabur) — Lax/Strict only work same-origin.
+    # SameSite=None requires Secure=True (HTTPS only), which is always true in prod.
+    _samesite = "none" if _is_prod else "lax"
     response.set_cookie(
         key="jwt_token",
         value=jwt_token,
         httponly=True,
-        samesite="lax",
+        samesite=_samesite,
         secure=_secure,
         max_age=_JWT_COOKIE_TTL,
         path="/",
