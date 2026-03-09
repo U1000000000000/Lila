@@ -18,12 +18,15 @@ export default function Login() {
   }, [loading, isAuthenticated, navigate]);
 
   const handleGoogleLogin = () => {
-    // In production (Vercel), OAuth goes through the rewrite proxy, so use
-    // a relative URL. This ensures cookies are set for the frontend domain.
-    // In dev, we need the direct backend URL because OAuth redirects must
-    // match the origin that sets the oauth_state cookie.
-    const backendOrigin = import.meta.env.VITE_BACKEND_ORIGIN || "http://localhost:8000";
-    const loginUrl = backendOrigin 
+    // In production (Vercel), VITE_BACKEND_ORIGIN is intentionally empty so
+    // OAuth goes through the Vercel rewrite proxy.  This keeps the oauth_state
+    // cookie on the frontend domain and makes the callback also arrive via the
+    // same proxy — avoiding cross-domain cookie mismatch on Safari / Firefox.
+    // In dev, set VITE_BACKEND_ORIGIN=http://localhost:8000 in .env.local so
+    // the browser talks directly to the local backend (Vite proxy can't follow
+    // the Google redirect back to localhost:8000 for you).
+    const backendOrigin = import.meta.env.VITE_BACKEND_ORIGIN; // "" → falsy → relative URL in prod
+    const loginUrl = backendOrigin
       ? `${backendOrigin}/api/v1/auth/google/login`
       : "/api/v1/auth/google/login";
     window.location.href = loginUrl;
