@@ -60,14 +60,16 @@ export default function Chat() {
     captionQueueRef.current.push(text);
   }, []);
 
-  const handleUserTranscript = useCallback((text) => {
+  const handleUserTranscript = useCallback((text, isFinal) => {
     if (!text.trim()) return;
-    // Show what Lila heard the user say, then auto-clear after 4 s.
-    // This closes the feedback loop: users know exactly what STT picked up
-    // and can self-correct if the transcription was wrong.
+    // Interim results update the displayed text in place — live typing effect.
+    // The 4 s auto-clear timer only starts on the FINAL result so it does not
+    // reset prematurely while the user is still speaking.
     setUserCaption(text.trim());
-    if (userCaptionTimerRef.current) clearTimeout(userCaptionTimerRef.current);
-    userCaptionTimerRef.current = setTimeout(() => setUserCaption(""), 4000);
+    if (isFinal) {
+      if (userCaptionTimerRef.current) clearTimeout(userCaptionTimerRef.current);
+      userCaptionTimerRef.current = setTimeout(() => setUserCaption(""), 4000);
+    }
   }, []);
 
   useWebSocket({

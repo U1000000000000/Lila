@@ -91,40 +91,76 @@ export function useWebSocket({ onStatus, onTranscript, onUserTranscript, onAudio
         }, 100);
       };
 
-      // Minimum PCM payload that represents real speech.
+      // Minimum raw PCM bytes considered real speech.
       // Deepgram occasionally flushes a tiny trailing frame — skip it so the
       // audio queue never receives a near-silent clip that would advance the
       // caption queue without playing audible speech.
       const MIN_AUDIO_BYTES = 1000;
 
+      // Accumulates raw PCM binary frames between a tts_start and tts_end
+      // marker pair. Reset on every new sentence start.
+      let ttsChunks = [];
+
       ws.onmessage = async (message) => {
-        // Binary → PCM audio from TTS
+        // ── Binary: streaming PCM chunk from Deepgram TTS ─────────────────────
+        // Chunks arrive continuously while Deepgram generates audio (~150 ms
+        // after the TTS request). We accumulate them in memory and assemble
+        // a single WAV blob on tts_end — much cheaper than re-fetching.
         if (message.data instanceof Blob && message.data.size > 0) {
           const buf = await message.data.arrayBuffer();
-          const wavBlob = convertPCMToWav(buf, SAMPLE_RATE);
-          if (wavBlob && wavBlob.size >= MIN_AUDIO_BYTES) {
-            callbacksRef.current.onAudio(URL.createObjectURL(wavBlob));
-          } else if (wavBlob) {
-            console.warn("[WS] Skipping tiny audio blob (", wavBlob.size, "bytes)");
-          }
+          ttsChunks.push(buf);
           return;
         }
 
-        // Text → JSON control message
+        // ── Text: JSON control message ─────────────────────────────────────────
         try {
           const received = JSON.parse(message.data);
-          if (received.type === "ping") return;            // keep-alive
-          // AI response text
-          if (received.response) {
+          if (received.type === "ping") return; // keep-alive
+
+          // ── Sentence start ────────────────────────────────────────────────────
+          // Server sends this immediately before the first PCM chunk for a
+          // sentence. Queue the caption now; audio will follow via tts_end.
+          if (received.type === "tts_start") {
+            ttsChunks = []; // reset for this sentence
             callbacksRef.current.onTranscript(received.response);
             callbacksRef.current.onMsgCount((c) => c + 1);
+            return;
           }
-          // User's own speech text (STT)
+
+          // ── Sentence end ──────────────────────────────────────────────────────
+          // All PCM chunks for this sentence have arrived. Assemble into a single
+          // contiguous buffer, convert to WAV, and push to the audio queue.
+          // This assembles from in-memory ArrayBuffers — effectively free.
+          if (received.type === "tts_end") {
+            const totalBytes = ttsChunks.reduce((s, b) => s + b.byteLength, 0);
+            if (totalBytes >= MIN_AUDIO_BYTES) {
+              const combined = new Uint8Array(totalBytes);
+              let offset = 0;
+              for (const buf of ttsChunks) {
+                combined.set(new Uint8Array(buf), offset);
+                offset += buf.byteLength;
+              }
+              const wavBlob = convertPCMToWav(combined.buffer, SAMPLE_RATE);
+              if (wavBlob) {
+                callbacksRef.current.onAudio(URL.createObjectURL(wavBlob));
+              }
+            } else if (totalBytes > 0) {
+              console.warn("[WS] Skipping tiny TTS sentence (", totalBytes, "bytes)");
+            }
+            ttsChunks = [];
+            return;
+          }
+
+          // ── User's own STT transcript ─────────────────────────────────────────
+          // Server forwards both interim (live preview) and final (confirmed)
+          // Deepgram results. Pass is_final so the UI can distinguish:
+          //   interim → update displayed text in place (live-typing effect)
+          //   final   → start the auto-clear countdown
           if (received.transcript) {
-            callbacksRef.current.onUserTranscript?.(received.transcript);
+            callbacksRef.current.onUserTranscript?.(received.transcript, received.is_final ?? true);
           }
         } catch {
-          // ignore malformed
+          // ignore malformed frames
         }
       };
 
