@@ -65,7 +65,7 @@ def google_login(request: Request):
     state = secrets.token_urlsafe(32)
     url = get_google_login_url(state)
     response = RedirectResponse(url)
-    _is_prod = settings.FRONTEND_URL.startswith("https://")
+    _is_prod = settings.APP_ENV == "production"
     _secure = _is_prod
     # SameSite=None is required for cross-origin deployments (e.g. Vercel + Zeabur).
     # The OAuth flow sets this cookie on the backend origin and reads it back

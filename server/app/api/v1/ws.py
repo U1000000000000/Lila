@@ -52,15 +52,23 @@ async def websocket_endpoint(websocket: WebSocket):
 
     await websocket.accept()
 
-    # Browsers automatically send HttpOnly cookies with WebSocket handshakes
-    # (same as HTTP requests) — no query param needed or accepted.
-    # Reading from the cookie only keeps the JWT out of URLs, server logs,
-    # and JS memory entirely.
+    # Auth strategy:
+    # 1. Try HttpOnly cookie (dev environment, or same-origin prod)
+    # 2. Fall back to ?token= query parameter (cross-origin prod via Vercel)
+    #    In production, frontend fetches GET /auth/ws-token, which returns a
+    #    short-lived (60s) JWT. WebSocket connects to Zeabur directly with
+    #    wss://lila.zeabur.app/ws?token=... because Vercel doesn't proxy WebSockets.
     token = websocket.cookies.get("jwt_token")
+    if not token:
+        # Extract token from query string (?token=xxx)
+        query_params = dict(websocket.query_params)
+        token = query_params.get("token")
+    
     if not token:
         await websocket.send_text(json.dumps({"error": "Not authenticated"}))
         await websocket.close()
         return
+    
     try:
         user = decode_access_token(token)
         google_id = user.get("google_id")

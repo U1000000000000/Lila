@@ -1,4 +1,3 @@
-
 """
 Auth Routes — /api/v1/auth
 --------------------------
@@ -7,7 +6,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from app.dependencies.auth import get_current_user
 from app.core.config import settings
-from app.core.security import decode_access_token
+from app.core.security import create_access_token, decode_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -50,7 +49,7 @@ async def exchange_auth_code(request: Request, response: Response):
     if time.time() > expires_at:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Auth code expired")
 
-    _is_prod = settings.FRONTEND_URL.startswith("https://")
+    _is_prod = settings.APP_ENV == "production"
     _secure = _is_prod
     # SameSite=None is required when the frontend and backend are on different
     # origins (e.g. Vercel + Zeabur) — Lax/Strict only work same-origin.
@@ -77,8 +76,28 @@ async def logout(response: Response):
     JavaScript cannot delete HttpOnly cookies — only the server can.
     Frontend calls POST /api/v1/auth/logout on user logout.
     """
-    response.delete_cookie(key="jwt_token", path="/", samesite="lax")
+    _is_prod = settings.APP_ENV == "production"
+    _secure = _is_prod
+    _samesite = "none" if _is_prod else "lax"
+    response.delete_cookie(key="jwt_token", path="/", samesite=_samesite, secure=_secure)
     return {"ok": True}
+
+
+@router.get("/ws-token")
+async def get_ws_token(user: dict = Depends(get_current_user)):
+    """
+    Generate a short-lived token for WebSocket authentication.
+    
+    In production, the WebSocket must connect directly to Zeabur (Vercel 
+    doesn't support WebSocket rewrites), but the HttpOnly cookie is domain-bound
+    to vercel.app. This endpoint returns a JWT the client can pass as a query 
+    parameter for WebSocket auth.
+    
+    Token expires in 60 seconds — just long enough to establish the connection.
+    """
+    # Create a short-lived token (60 seconds)
+    ws_token = create_access_token(user, expires_minutes=1)
+    return {"token": ws_token}
 
 
 from app.api.v1.google_auth import router as google_router

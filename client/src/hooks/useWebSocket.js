@@ -1,17 +1,32 @@
 import { useCallback, useEffect, useRef } from "react";
 import { convertPCMToWav } from "../utils/audio";
+import { api } from "../services/api";
 
-// Always derive the WS URL from the current page origin so the Vite proxy
-// handles it in dev (ws://localhost:5173/ws → ws://localhost:8000/ws).
-// HttpOnly cookies are sent automatically on WebSocket handshakes — no token
-// in the URL needed.
-// In production, set VITE_WS_BASE_URL=wss://api.example.com if cross-origin.
-function getWsUrl() {
+// In dev: use relative URL so the Vite proxy handles it (cookies work).
+// In prod: absolute URL to Zeabur (Vercel doesn't proxy WebSocket).
+//   Cross-origin WebSocket can't use HttpOnly cookies, so we fetch a
+//   short-lived token from GET /auth/ws-token and pass it as ?token=...
+async function getWsUrl() {
   const override = import.meta.env.VITE_WS_BASE_URL;
+  
+  // If we have an override (production), it's an absolute URL to Zeabur.
+  // Fetch a WebSocket token and append it to the URL.
+  if (override && override.startsWith("wss://")) {
+    try {
+      const { token } = await api.get("/auth/ws-token");
+      return `${override}?token=${encodeURIComponent(token)}`;
+    } catch (err) {
+      console.error("Failed to fetch WebSocket token:", err);
+      throw new Error("Authentication required for WebSocket connection");
+    }
+  }
+  
+  // Development (or same-origin): use relative URL, cookies work automatically.
   if (override) return override;
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
   return `${proto}://${window.location.host}/ws`;
 }
+
 const SAMPLE_RATE = 24000;
 
 /**
@@ -79,9 +94,11 @@ export function useWebSocket({ onStatus, onTranscript, onUserTranscript, onAudio
     let reconnectTimeout;
     let retryCount = 0;
 
-    function connectWebSocket() {
-      ws = new window.WebSocket(getWsUrl());
-      wsRef.current = ws;
+    async function connectWebSocket() {
+      try {
+        const wsUrl = await getWsUrl();
+        ws = new window.WebSocket(wsUrl);
+        wsRef.current = ws;
 
       ws.onopen = () => {
         retryCount = 0;
@@ -180,6 +197,10 @@ export function useWebSocket({ onStatus, onTranscript, onUserTranscript, onAudio
       };
 
       ws.onerror = () => callbacksRef.current.onStatus("❌ WebSocket error");
+      } catch (err) {
+        console.error("WebSocket connection failed:", err);
+        callbacksRef.current.onStatus("❌ Authentication failed. Please refresh.");
+      }
     }
 
     connectWebSocket();
