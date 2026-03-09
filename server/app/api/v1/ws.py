@@ -19,6 +19,7 @@ from uuid import uuid4
 
 import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from app.core.config import settings
 from app.services.memory_mongo_service import (
@@ -167,7 +168,35 @@ async def websocket_endpoint(websocket: WebSocket):
                         if not transcript:
                             continue
 
-                        print(f"👤 User: {transcript}")
+                        is_final = data.get("is_final", False)
+
+                        # Always forward transcript to the browser so the user
+                        # can see what Deepgram heard (interim = live preview,
+                        # final = confirmed text). is_final flag lets the
+                        # frontend distinguish the two if needed.
+                        if websocket.client_state != WebSocketState.DISCONNECTED:
+                            await websocket.send_text(
+                                json.dumps({"transcript": transcript, "is_final": is_final})
+                            )
+
+                        # Only fire the LLM on a FINAL (non-interim) transcript.
+                        #
+                        # Deepgram streams a sequence of progressively longer
+                        # interim results while the user speaks:
+                        #   "Hello"  → "Hello how"  → "Hello how are you"
+                        # Acting on every interim causes:
+                        #   (a) constant LLM cancel/restart churn (wasted RTTs)
+                        #   (b) the += accumulation turning the prompt into
+                        #       "Hello Hello how Hello how are Hello how are you"
+                        # Waiting for is_final gives one clean, complete sentence.
+                        if not is_final:
+                            continue
+
+                        print(f"👤 User (final): {transcript}")
+                        # += is correct here: Deepgram may emit multiple finals
+                        # for a single spoken utterance when the user pauses
+                        # mid-sentence. Each final cancels the in-flight LLM
+                        # task and the next one incorporates the full context.
                         latest_user_input += " " + transcript
 
                         # Barge-in: cancel current response
@@ -197,7 +226,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     elif "error" in data:
                         print(f"❌ Deepgram error: {data['error']}")
-                        if not websocket.client_state.closed:
+                        if websocket.client_state != WebSocketState.DISCONNECTED:
                             await websocket.send_text(
                                 json.dumps({"error": f"STT error: {data['error']}"})
                             )
@@ -210,7 +239,7 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 while True:
                     await asyncio.sleep(30)
-                    if not websocket.client_state.closed:
+                    if websocket.client_state != WebSocketState.DISCONNECTED:
                         await websocket.send_text(json.dumps({"type": "ping"}))
             except Exception:
                 pass
