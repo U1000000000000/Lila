@@ -38,6 +38,43 @@ router = APIRouter()
 _active_connections: int = 0
 _connections_lock: asyncio.Lock = asyncio.Lock()
 
+# ── Semantic utterance gate ────────────────────────────────────────────────────
+# When speech_final fires, we check the last spoken word.
+# If it's in this set the user is almost certainly mid-sentence (pause to think,
+# breathe, or gather words). We start a silent-window timer instead of firing
+# the LLM immediately. If the user resumes speaking the timer resets. If the
+# timer expires they genuinely stopped, so we fire with whatever was accumulated.
+# Words NOT in this set → fire the LLM immediately, zero added latency.
+_OPEN_ENDINGS: frozenset[str] = frozenset({
+    # Conjunctions
+    "and", "but", "so", "or", "because", "although", "though", "while",
+    "if", "as", "since", "until", "unless", "whereas",
+    # Prepositions
+    "in", "at", "for", "with", "to", "about", "on", "of", "by", "from",
+    "into", "through", "before", "after", "above", "below", "between",
+    "among", "within", "without", "along", "across",
+    # Articles / determiners
+    "the", "a", "an", "this", "that", "these", "those",
+    "my", "your", "their", "our", "its", "his", "her",
+    "some", "any", "each", "every",
+    # Dangling pronouns / light verbs
+    "it", "they", "we", "he", "she", "i", "you",
+    "get", "is", "are", "was", "were", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should",
+    "can", "may", "might", "shall", "must", "be", "been", "being",
+    # Relative / interrogative openers
+    "which", "who", "whom", "where", "when", "how", "what",
+    # Common mid-sentence filler
+    "like", "just", "really", "very", "also", "even", "still",
+    "already", "then", "than", "now", "here", "there", "not",
+    "more", "most", "less", "few",
+})
+
+# Silent window after an open-ended speech_final (milliseconds).
+# Only applies when the user pauses on a dangling word — clean sentence
+# endings bypass this entirely and fire the LLM with zero delay.
+_UTTERANCE_WINDOW_MS: int = 1200
+
 
 async def _decrement_connections() -> int:
     global _active_connections
@@ -157,8 +194,65 @@ async def websocket_endpoint(websocket: WebSocket):
                 print(f"\u274c Audio receive error: {e}")
 
         async def process_transcription():
-            """Read STT results and trigger LLM responses."""
+            """Read STT results and trigger LLM responses.
+
+            Utterance gate logic:
+              speech_final arrives
+                └─ last word in _OPEN_ENDINGS?
+                     YES → accumulate, cancel old timer, start fresh 1.2 s timer
+                           timer fires → LLM (safety net for genuine pauses on open words)
+                           new speech_final before timer → reset timer
+                     NO  → cancel timer, fire LLM immediately (zero extra latency)
+
+            Barge-in on any speech_final:
+              If Lila is currently responding, she is always cancelled immediately
+              regardless of whether we fire the LLM now or start the timer.
+            """
             nonlocal latest_user_input, current_task
+
+            # The pending utterance-window timer task. Sits here for the
+            # lifetime of this coroutine; the async for loop manages it.
+            pending_timer_task: asyncio.Task | None = None
+
+            async def _fire_llm() -> None:
+                """Spawn a new LLM response task for the accumulated input."""
+                nonlocal latest_user_input, current_task
+                if not latest_user_input.strip():
+                    return
+                # Cancel Lila's current response if still running
+                if current_task and not current_task.done():
+                    print("🛑 Barge-in — cancelling previous response")
+                    current_task.cancel()
+                    try:
+                        await current_task
+                    except asyncio.CancelledError:
+                        pass
+                captured = latest_user_input.strip()
+                latest_user_input = ""
+                print(f"👤 User → LLM: '{captured}'")
+                current_task = asyncio.create_task(
+                    send_llm_response(
+                        captured,
+                        websocket,
+                        conversation_history,
+                        current_session_history,
+                        tts_ws,
+                        tts_session,
+                        google_id,
+                        user_imprints,
+                    )
+                )
+
+            async def _utterance_timer() -> None:
+                """Wait for the silent window then fire the LLM.
+                Cancelled silently if the user resumes speaking first.
+                """
+                try:
+                    await asyncio.sleep(_UTTERANCE_WINDOW_MS / 1000)
+                    print(f"👤 User (window elapsed — firing): '{latest_user_input.strip()}'")
+                    await _fire_llm()
+                except asyncio.CancelledError:
+                    pass  # user kept speaking — normal, ignore
 
             async for raw in deepgram_ws:
                 try:
@@ -177,60 +271,47 @@ async def websocket_endpoint(websocket: WebSocket):
                             continue
 
                         is_final = data.get("is_final", False)
+                        speech_final = data.get("speech_final", False)
 
-                        # Always forward transcript to the browser so the user
-                        # can see what Deepgram heard (interim = live preview,
-                        # final = confirmed text). is_final flag lets the
-                        # frontend distinguish the two if needed.
+                        # Forward all transcript events to the browser for live captions
                         if websocket.client_state != WebSocketState.DISCONNECTED:
                             await websocket.send_text(
                                 json.dumps({"transcript": transcript, "is_final": is_final})
                             )
 
-                        # Only fire the LLM on a FINAL (non-interim) transcript.
-                        #
-                        # Deepgram streams a sequence of progressively longer
-                        # interim results while the user speaks:
-                        #   "Hello"  → "Hello how"  → "Hello how are you"
-                        # Acting on every interim causes:
-                        #   (a) constant LLM cancel/restart churn (wasted RTTs)
-                        #   (b) the += accumulation turning the prompt into
-                        #       "Hello Hello how Hello how are Hello how are you"
-                        # Waiting for is_final gives one clean, complete sentence.
-                        if not is_final:
+                        if not speech_final:
                             continue
 
-                        print(f"👤 User (final): {transcript}")
-                        # += is correct here: Deepgram may emit multiple finals
-                        # for a single spoken utterance when the user pauses
-                        # mid-sentence. Each final cancels the in-flight LLM
-                        # task and the next one incorporates the full context.
+                        # Accumulate the confirmed segment
                         latest_user_input += " " + transcript
 
-                        # Barge-in: cancel current response
+                        # Immediate barge-in: stop Lila as soon as the user speaks,
+                        # regardless of whether we fire the LLM now or after the timer.
                         if current_task and not current_task.done():
-                            print("🛑 Barge-in — cancelling previous response")
+                            print("🛑 Barge-in — stopping Lila")
                             current_task.cancel()
                             try:
                                 await current_task
                             except asyncio.CancelledError:
                                 pass
 
-                        captured_input = latest_user_input.strip()
-                        latest_user_input = ""  # reset so next turn starts fresh
+                        # Inspect the last word to decide open vs. closed ending
+                        words = transcript.split()
+                        last_word = words[-1].lower().rstrip(",.;:!?") if words else ""
 
-                        current_task = asyncio.create_task(
-                            send_llm_response(
-                                captured_input,
-                                websocket,
-                                conversation_history,
-                                current_session_history,
-                                tts_ws,
-                                tts_session,
-                                google_id,
-                                user_imprints,
-                            )
-                        )
+                        if last_word in _OPEN_ENDINGS:
+                            # Mid-sentence pause — reset timer, do NOT fire LLM yet
+                            print(f"👤 User (open, waiting): '{transcript}' [last={last_word!r}]")
+                            if pending_timer_task and not pending_timer_task.done():
+                                pending_timer_task.cancel()
+                            pending_timer_task = asyncio.create_task(_utterance_timer())
+                        else:
+                            # Clean sentence end — cancel timer, fire LLM now
+                            print(f"👤 User (closed, firing): '{transcript}' [last={last_word!r}]")
+                            if pending_timer_task and not pending_timer_task.done():
+                                pending_timer_task.cancel()
+                                pending_timer_task = None
+                            await _fire_llm()
 
                     elif "error" in data:
                         print(f"❌ Deepgram error: {data['error']}")
