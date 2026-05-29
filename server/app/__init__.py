@@ -48,5 +48,11 @@ app.include_router(user_routes.router,     prefix="/api/v1")   # /api/v1/users
 app.include_router(memory_routes.router,   prefix="/api/v1")   # /api/v1/memory
 app.include_router(analysis_routes.router, prefix="/api/v1")   # /api/v1/analysis
 
+
+# ── Health check ─────────────────────────────────────────────────────────────
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "service": "lila"}
+
 # ── Middleware ───────────────────────────────────────────────────────────────
 app.add_middleware(AuthMiddleware)
