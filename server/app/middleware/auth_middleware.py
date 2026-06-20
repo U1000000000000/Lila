@@ -29,11 +29,20 @@ def _extract_token(request: Request) -> str | None:
     return request.cookies.get("jwt_token")
 
 
-class AuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
+class AuthMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        request = Request(scope, receive=receive)
+        
         # Allow all OPTIONS requests (CORS preflight) through without auth
         if request.method == "OPTIONS":
-            return await call_next(request)
+            return await self.app(scope, receive, send)
+            
         # Public routes that don't need authentication
         if (
             request.url.path.startswith("/api/v1/auth")
@@ -42,14 +51,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
             or request.url.path.startswith("/openapi")
             or request.url.path.startswith("/favicon")
             or request.url.path.startswith("/.well-known")
-            or request.url.path == "/ws"
         ):
-            return await call_next(request)
+            return await self.app(scope, receive, send)
+            
         token = _extract_token(request)
         if not token:
-            return JSONResponse({"error": "Not authenticated"}, status_code=401)
+            response = JSONResponse({"error": "Not authenticated"}, status_code=401)
+            return await response(scope, receive, send)
+            
         try:
             decode_access_token(token)
         except Exception:
-            return JSONResponse({"error": "Invalid token"}, status_code=401)
-        return await call_next(request)
+            response = JSONResponse({"error": "Invalid token"}, status_code=401)
+            return await response(scope, receive, send)
+            
+        return await self.app(scope, receive, send)
