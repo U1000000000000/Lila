@@ -94,6 +94,13 @@ async def google_callback(request: Request, code: str = None, state: str = None,
 
     # ── CSRF validation ────────────────────────────────────────────────────────
     stored_state = request.cookies.get("oauth_state")
+    
+    # If cookie is missing, we might have been redirected directly to the backend domain.
+    # Bounce the user to the frontend proxy domain so the browser sends its cookies.
+    if not stored_state and "redirected" not in request.query_params:
+        proxy_callback_url = f"{frontend_url}/api/v1/auth/google/callback?code={code}&state={state}&redirected=1"
+        return RedirectResponse(url=proxy_callback_url, status_code=302)
+
     if not state or not stored_state or not secrets.compare_digest(state, stored_state):
         response = RedirectResponse(url=f"{frontend_url}/login", status_code=302)
         response.delete_cookie("oauth_state")
