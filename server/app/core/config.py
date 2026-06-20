@@ -49,7 +49,7 @@ class Settings:
     _FRONTEND_URL_LOCAL: str = os.environ.get("FRONTEND_URL_LOCAL", "http://localhost:5173")
     _FRONTEND_URL_PROD: str  = os.environ.get("FRONTEND_URL", "https://lilakreis.vercel.app")
     _BACKEND_URL_LOCAL: str  = os.environ.get("BACKEND_URL_LOCAL", "http://localhost:8000")
-    _BACKEND_URL_PROD: str   = os.environ.get("BACKEND_URL", "https://rendersal.onrender.com/lila/")
+    _BACKEND_URL_PROD: str   = os.environ.get("BACKEND_URL", "https://rendersal.onrender.com/lila")
 
     # Active URLs — determined solely by APP_ENV, no manual toggling needed.
     FRONTEND_URL: str = _FRONTEND_URL_PROD if APP_ENV == "production" else _FRONTEND_URL_LOCAL
