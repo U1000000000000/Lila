@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/v1/:path*",
-      "destination": "https://lila.zeabur.app/api/v1/:path*"
+      "destination": "https://rendersal.onrender.com/lila/api/v1/:path*"
     },
     {
       "source": "/api/:path*",
-      "destination": "https://lila.zeabur.app/api/:path*"
+      "destination": "https://rendersal.onrender.com/lila/api/:path*"
     },
     {
       "source": "/(.*)",
