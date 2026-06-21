@@ -23,8 +23,14 @@ async function getWsUrl() {
   
   // Development (or same-origin): use relative URL, cookies work automatically.
   if (override) return override;
-  const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${proto}://${window.location.host}/ws`;
+  
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    return `${proto}://${window.location.host}/ws`;
+  }
+  
+  // Production fallback: Vercel does not support WebSockets, so point to Render.
+  return "wss://rendersal.onrender.com/lila/ws";
 }
 
 const SAMPLE_RATE = 24000;
