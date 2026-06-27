@@ -336,10 +336,17 @@ async def websocket_endpoint(websocket: WebSocket):
         # ── Run pipeline ──────────────────────────────────────────────────────
         async with stt_ws as deepgram_ws:
             keep_alive_task = asyncio.create_task(keep_alive())
+            audio_task = asyncio.create_task(receive_audio())
+            tx_task = asyncio.create_task(process_transcription())
             try:
-                await asyncio.gather(receive_audio(), process_transcription())
+                # Wait for whichever finishes first (e.g., client disconnects)
+                await asyncio.wait(
+                    [audio_task, tx_task], return_when=asyncio.FIRST_COMPLETED
+                )
             finally:
                 keep_alive_task.cancel()
+                audio_task.cancel()
+                tx_task.cancel()
                 try:
                     await keep_alive_task
                 except asyncio.CancelledError:
